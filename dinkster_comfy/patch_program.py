@@ -7,6 +7,7 @@ import json
 import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from typing import Callable
 
 import torch
 
@@ -204,8 +205,84 @@ class WeightDeltaEntry:
 
 
 @dataclass(frozen=True)
+class ModuleInsertionEntry:
+    namespace: str
+    sites: tuple[str, ...]
+    materialize_ref: str
+    materialize: Callable = field(compare=False, repr=False)
+    resources: PatchResource
+    additional_models: tuple[object, ...] = field(
+        default=(), compare=False, repr=False
+    )
+    additional_model_identities: tuple[str, ...] = ()
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        namespace: str,
+        sites: Iterable[str],
+        materialize_ref: str,
+        materialize: Callable,
+        resources: object = None,
+        additional_models: Iterable[object] = (),
+        additional_model_identities: Iterable[str] = (),
+    ) -> ModuleInsertionEntry:
+        if not namespace:
+            raise ValueError("module insertion namespace must not be empty")
+        if not materialize_ref:
+            raise ValueError("module insertion materialize_ref must not be empty")
+        if not callable(materialize):
+            raise TypeError("module insertion materialize must be callable")
+        model_values = tuple(additional_models)
+        model_identities = tuple(additional_model_identities)
+        if len(model_values) != len(model_identities):
+            raise ValueError(
+                "each additional model must have a declared resource identity"
+            )
+        if any(not identity for identity in model_identities):
+            raise ValueError("additional model identities must not be empty")
+        return cls(
+            namespace=namespace,
+            sites=tuple(sites),
+            materialize_ref=materialize_ref,
+            materialize=materialize,
+            resources=PatchResource.bind(resources),
+            additional_models=model_values,
+            additional_model_identities=model_identities,
+        )
+
+    def descriptor(self) -> dict[str, object]:
+        return {
+            "kind": "module_insertion",
+            "namespace": self.namespace,
+            "sites": self.sites,
+            "materialize": self.materialize_ref,
+            "resources": self.resources.identity,
+            "additional_models": self.additional_model_identities,
+        }
+
+    def validate_resources(self) -> None:
+        if self.resources.identity != _digest(self.resources.value):
+            raise RuntimeError(
+                f"module insertion resources for '{self.namespace}' changed after binding"
+            )
+
+    def with_additional_models(
+        self, models: Iterable[object]
+    ) -> ModuleInsertionEntry:
+        values = tuple(models)
+        if len(values) != len(self.additional_model_identities):
+            raise ValueError("replacement additional model count must match")
+        return dataclasses.replace(self, additional_models=values)
+
+
+PatchEntry = WeightDeltaEntry | ModuleInsertionEntry
+
+
+@dataclass(frozen=True)
 class PatchProgram:
-    entries: tuple[WeightDeltaEntry, ...] = ()
+    entries: tuple[PatchEntry, ...] = ()
 
     @property
     def digest(self) -> str:
@@ -221,6 +298,10 @@ class PatchProgram:
     def validate_resources(self, target: str | None = None) -> None:
         tensor_digests: dict[int, str] = {}
         for entry in self.entries:
+            if isinstance(entry, ModuleInsertionEntry):
+                if target is None:
+                    entry.validate_resources()
+                continue
             if target is not None and entry.target != target:
                 continue
             if entry.patch.identity != _digest(entry.patch.value, tensor_digests):
@@ -278,8 +359,48 @@ class PatchProgram:
     ) -> dict[str, list[tuple[object, object, object, object, object]]]:
         patches: dict[str, list[tuple[object, object, object, object, object]]] = {}
         for entry in self.entries:
+            if not isinstance(entry, WeightDeltaEntry):
+                continue
             patches.setdefault(entry.target, []).append(entry.runtime_tuple())
         return patches
+
+    def replace_module_insertions(
+        self, namespace: str, entries: Iterable[ModuleInsertionEntry]
+    ) -> PatchProgram:
+        replacements = tuple(entries)
+        if any(entry.namespace != namespace for entry in replacements):
+            raise ValueError("module insertion namespace does not match replacement key")
+        retained = tuple(
+            entry
+            for entry in self.entries
+            if not (
+                isinstance(entry, ModuleInsertionEntry)
+                and entry.namespace == namespace
+            )
+        )
+        return PatchProgram((*retained, *replacements))
+
+    def module_insertions(
+        self, namespace: str | None = None
+    ) -> tuple[ModuleInsertionEntry, ...]:
+        return tuple(
+            entry
+            for entry in self.entries
+            if isinstance(entry, ModuleInsertionEntry)
+            and (namespace is None or entry.namespace == namespace)
+        )
+
+    def map_additional_models(
+        self, transform: Callable[[object], object]
+    ) -> PatchProgram:
+        entries: list[PatchEntry] = []
+        for entry in self.entries:
+            if isinstance(entry, ModuleInsertionEntry) and entry.additional_models:
+                entry = entry.with_additional_models(
+                    transform(model) for model in entry.additional_models
+                )
+            entries.append(entry)
+        return PatchProgram(tuple(entries))
 
     @classmethod
     def from_weight_patches(cls, patches: Mapping[str, list[tuple]]) -> PatchProgram:
