@@ -1,7 +1,7 @@
 # Fork ledger
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`e9027f2b30f37bb3052714eb08fcf479542f4fc0`.
+`f1072eb0350638a3390ddb6afbcaa8c6b237c6fd`.
 
 | File or subsystem | Tier | Reason |
 | --- | --- | --- |
