@@ -6,7 +6,7 @@ import dinkster_inference.ldm.common_dit
 import dinkster_inference.patcher_extension
 from dinkster_inference.ldm.flux.math import apply_rope, rope
 from dinkster_inference.ldm.hidream.model import FeedForwardSwiGLU
-from dinkster_inference.ldm.modules.attention import optimized_attention
+from dinkster_inference.ldm.modules.attention import AttentionTensorContainer, ComfyAttention, optimized_attention
 from dinkster_inference.ldm.modules.diffusionmodules.mmdit import TimestepEmbedder
 
 from .modules import (
@@ -27,6 +27,7 @@ class MMDiTJointAttention(nn.Module):
     """
     def __init__(self, dim, num_heads=8, qkv_bias=False, dtype=None, device=None, operations=None):
         super().__init__()
+        self.comfy_attention = ComfyAttention()
         assert dim % num_heads == 0
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
@@ -66,10 +67,12 @@ class MMDiTJointAttention(nn.Module):
         k_joint = torch.cat([ky, kx], dim=2)
         v_joint = torch.cat([vy, vx], dim=2)
 
+        del qkv_x, qkv_y, qx, kx, vx, qy, ky, vy
+        q_joint, k_joint, v_joint = AttentionTensorContainer(q_joint), AttentionTensorContainer(k_joint), AttentionTensorContainer(v_joint)
         out_joint = optimized_attention(
             q_joint, k_joint, v_joint, H,
             mask=attn_mask, skip_reshape=True, skip_output_reshape=True,
-            transformer_options=transformer_options,
+            transformer_options=transformer_options, preferred_attention=self.comfy_attention,
         )
 
         out_y = out_joint[:, :, :Ny, :].transpose(1, 2).reshape(B, Ny, H * D)
