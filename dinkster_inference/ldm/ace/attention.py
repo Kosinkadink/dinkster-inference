@@ -19,7 +19,7 @@ import torch.nn.functional as F
 from torch import nn
 
 import dinkster_inference.model_management
-from dinkster_inference.ldm.modules.attention import optimized_attention
+from dinkster_inference.ldm.modules.attention import AttentionTensorContainer, ComfyAttention, optimized_attention
 
 class Attention(nn.Module):
     def __init__(
@@ -50,6 +50,7 @@ class Attention(nn.Module):
         dtype=None, device=None, operations=None
     ):
         super().__init__()
+        self.comfy_attention = ComfyAttention()
 
         self.inner_dim = out_dim if out_dim is not None else dim_head * heads
         self.inner_kv_dim = self.inner_dim if kv_heads is None else dim_head * kv_heads
@@ -240,9 +241,8 @@ class CustomLiteLAProcessor2_0:
         key = key.transpose(-1, -2).reshape(batch_size, attn.heads, head_dim, -1).transpose(-1, -2)
         value = value.transpose(-1, -2).reshape(batch_size, attn.heads, head_dim, -1)
 
-        # RoPE需要 [B, H, S, D] 输入
-        # 此时 query是 [B, H, D, S], 需要转成 [B, H, S, D] 才能应用RoPE
-        query = query.permute(0, 1, 3, 2)  # [B, H, S, D]  (从 [B, H, D, S])
+        # RoPE expects [B, H, S, D], while query is currently [B, H, D, S].
+        query = query.permute(0, 1, 3, 2)  # [B, H, S, D]
 
         # Apply query and key normalization if needed
         if attn.norm_q is not None:
@@ -258,7 +258,7 @@ class CustomLiteLAProcessor2_0:
             elif rotary_freqs_cis_cross is not None and has_encoder_hidden_state_proj:
                 key = self.apply_rotary_emb(key, rotary_freqs_cis_cross)
 
-        # 此时 query是 [B, H, S, D]，需要还原成 [B, H, D, S]
+        # Restore query to [B, H, D, S].
         query = query.permute(0, 1, 3, 2)  # [B, H, D, S]
 
         if attention_mask is not None:
@@ -266,12 +266,12 @@ class CustomLiteLAProcessor2_0:
             attention_mask = attention_mask[:, None, :, None].to(key.dtype)  # [B, 1, S, 1]
             query = query * attention_mask.permute(0, 1, 3, 2)  # [B, H, S, D] * [B, 1, S, 1]
             if not attn.is_cross_attention:
-                key = key * attention_mask  # key: [B, h, S, D] 与 mask [B, 1, S, 1] 相乘
-                value = value * attention_mask.permute(0, 1, 3, 2)  # 如果 value 是 [B, h, D, S]，那么需调整mask以匹配S维度
+                key = key * attention_mask  # [B, h, S, D] * [B, 1, S, 1]
+                value = value * attention_mask.permute(0, 1, 3, 2)  # Match the S dimension of [B, h, D, S].
 
         if attn.is_cross_attention and encoder_attention_mask is not None and has_encoder_hidden_state_proj:
             encoder_attention_mask = encoder_attention_mask[:, None, :, None].to(key.dtype)  # [B, 1, S_enc, 1]
-            # 此时 key: [B, h, S_enc, D], value: [B, h, D, S_enc]
+            # key: [B, h, S_enc, D], value: [B, h, D, S_enc]
             key = key * encoder_attention_mask  # [B, h, S_enc, D] * [B, 1, S_enc, 1]
             value = value * encoder_attention_mask.permute(0, 1, 3, 2)  # [B, h, D, S_enc] * [B, 1, 1, S_enc]
 
@@ -423,7 +423,7 @@ class CustomerAttnProcessor2_0:
         if attn.is_cross_attention and encoder_attention_mask is not None and has_encoder_hidden_state_proj:
             # attention_mask: N x S1
             # encoder_attention_mask: N x S2
-            # cross attention 整合attention_mask和encoder_attention_mask
+            # Cross attention combines attention_mask and encoder_attention_mask.
             combined_mask = attention_mask[:, :, None] * encoder_attention_mask[:, None, :]
             attention_mask = torch.where(combined_mask == 1, 0.0, -torch.inf)
             attention_mask = attention_mask[:, None, :, :].expand(-1, attn.heads, -1, -1).to(query.dtype)
@@ -435,9 +435,11 @@ class CustomerAttnProcessor2_0:
             attention_mask = attention_mask.view(batch_size, attn.heads, -1, attention_mask.shape[-1])
 
         # the output of sdp = (batch, num_heads, seq_len, head_dim)
+        heads = query.shape[1]
+        query, key, value = AttentionTensorContainer(query), AttentionTensorContainer(key), AttentionTensorContainer(value)
         hidden_states = optimized_attention(
-            query, key, value, heads=query.shape[1], mask=attention_mask, skip_reshape=True, transformer_options=transformer_options,
-        ).to(query.dtype)
+            query, key, value, heads=heads, mask=attention_mask, skip_reshape=True, preferred_attention=attn.comfy_attention, transformer_options=transformer_options,
+        )
 
         # linear proj
         hidden_states = attn.to_out[0](hidden_states)
