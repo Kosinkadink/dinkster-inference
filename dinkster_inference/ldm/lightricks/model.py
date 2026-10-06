@@ -11,6 +11,7 @@ import torch
 from torch import nn
 import dinkster_inference.patcher_extension
 import dinkster_inference.ldm.modules.attention
+from dinkster_inference.ldm.modules.attention import AttentionTensorContainer, ComfyAttention
 import dinkster_inference.ldm.common_dit
 import dinkster_inference.model_management
 import dinkster_inference.ops
@@ -393,7 +394,7 @@ class GuideAttentionMask:
         self.tracked_mask[:, :, :, :guide_start] = log_w.view(1, 1, -1, 1)
 
 
-def _attention_with_guide_mask(q, k, v, heads, guide_mask, attn_precision, transformer_options):
+def _attention_with_guide_mask(q, k, v, heads, guide_mask, attn_precision, transformer_options, preferred_attention=None):
     """Apply the guide mask by partitioning Q into noisy and tracked-guide
     groups, so each group needs only its own sub-mask. Avoids materializing
     the (1,1,T,T) dense mask.
@@ -405,19 +406,19 @@ def _attention_with_guide_mask(q, k, v, heads, guide_mask, attn_precision, trans
 
     if guide_start > 0: # In practice currently guides are always after noise, guard for safety if this changes.
         out[:, :guide_start, :] = dinkster_inference.ldm.modules.attention.optimized_attention(
-            q[:, :guide_start, :], k, v, heads, mask=guide_mask.noisy_mask,
-            attn_precision=attn_precision, transformer_options=transformer_options,
+            AttentionTensorContainer(q[:, :guide_start, :]), AttentionTensorContainer(k), AttentionTensorContainer(v), heads, mask=guide_mask.noisy_mask,
+            attn_precision=attn_precision, transformer_options=transformer_options, preferred_attention=preferred_attention,
             low_precision_attention=False, # sageattn mask support is unreliable
         )
     out[:, guide_start:tracked_end, :] = dinkster_inference.ldm.modules.attention.optimized_attention(
-        q[:, guide_start:tracked_end, :], k, v, heads, mask=guide_mask.tracked_mask,
-        attn_precision=attn_precision, transformer_options=transformer_options,
+        AttentionTensorContainer(q[:, guide_start:tracked_end, :]), AttentionTensorContainer(k), AttentionTensorContainer(v), heads, mask=guide_mask.tracked_mask,
+        attn_precision=attn_precision, transformer_options=transformer_options, preferred_attention=preferred_attention,
         low_precision_attention=False,
     )
     if tracked_end < q.shape[1]: # Every guide token is tracked, and nothing comes after them, guard for safety if this changes.
         out[:, tracked_end:, :] = dinkster_inference.ldm.modules.attention.optimized_attention(
-            q[:, tracked_end:, :], k, v, heads,
-            attn_precision=attn_precision, transformer_options=transformer_options,
+            AttentionTensorContainer(q[:, tracked_end:, :]), AttentionTensorContainer(k), AttentionTensorContainer(v), heads,
+            attn_precision=attn_precision, transformer_options=transformer_options, preferred_attention=preferred_attention,
         )
     return out
 
@@ -437,6 +438,7 @@ class CrossAttention(nn.Module):
         operations=None,
     ):
         super().__init__()
+        self.comfy_attention = ComfyAttention()
         inner_dim = dim_head * heads
         context_dim = query_dim if context_dim is None else context_dim
         self.attn_precision = attn_precision
@@ -484,12 +486,11 @@ class CrossAttention(nn.Module):
                     q = apply_rotary_emb(q, pe)
                     k = apply_rotary_emb(k, pe if k_pe is None else k_pe)
 
-            if mask is None:
-                out = dinkster_inference.ldm.modules.attention.optimized_attention(q, k, v, self.heads, attn_precision=self.attn_precision, transformer_options=transformer_options)
-            elif isinstance(mask, GuideAttentionMask):
-                out = _attention_with_guide_mask(q, k, v, self.heads, mask, attn_precision=self.attn_precision, transformer_options=transformer_options)
+            if isinstance(mask, GuideAttentionMask):
+                out = _attention_with_guide_mask(q, k, v, self.heads, mask, attn_precision=self.attn_precision, transformer_options=transformer_options, preferred_attention=self.comfy_attention)
             else:
-                out = dinkster_inference.ldm.modules.attention.optimized_attention(q, k, v, self.heads, mask=mask, attn_precision=self.attn_precision, transformer_options=transformer_options)
+                q, k, v = AttentionTensorContainer(q), AttentionTensorContainer(k), AttentionTensorContainer(v)
+                out = dinkster_inference.ldm.modules.attention.optimized_attention(q, k, v, self.heads, mask=mask, attn_precision=self.attn_precision, transformer_options=transformer_options, preferred_attention=self.comfy_attention)
 
         # Apply per-head gating if enabled
         if self.to_gate_logits is not None:
@@ -1230,7 +1231,7 @@ class LTXVModel(LTXBaseModel):
         """Build self-attention mask for per-guide attention attenuation.
 
         Reads resolved_guide_entries from merged_args (computed in _process_input)
-        to build a log-space additive bias mask that attenuates noisy ↔ guide
+        to build a log-space additive bias mask that attenuates noisy <-> guide
         attention for each guide reference independently.
 
         Returns None if no attenuation is needed (all strengths == 1.0 and no
@@ -1284,7 +1285,7 @@ class LTXVModel(LTXBaseModel):
                     f_lat, h_lat, w_lat,
                 )
                 # per_token shape: (B, f_lat*h_lat*w_lat).
-                # Collapse batch dim — the mask is assumed identical across the
+                # Collapse batch dim - the mask is assumed identical across the
                 # batch; validate and take the first element to get (1, tokens).
                 if per_token.shape[0] > 1:
                     ref = per_token[0]
@@ -1352,7 +1353,7 @@ class LTXVModel(LTXBaseModel):
             remaining_lat = f_lat - 1
             t = remaining_pix // remaining_lat
             if t < 1:
-                # Fewer pixel frames than latent frames — upsample by repeating
+                # Fewer pixel frames than latent frames - upsample by repeating
                 # the available pixel frames via nearest interpolation.
                 rest_flat = rearrange(
                     spatial_down[:, :, 1:, :, :],
@@ -1376,7 +1377,7 @@ class LTXVModel(LTXBaseModel):
                 rest = rest.mean(dim=3)
             latent_mask = torch.cat([first_frame, rest], dim=2)
         elif f_lat > 1:
-            # Single pixel frame but multiple latent frames — repeat the
+            # Single pixel frame but multiple latent frames - repeat the
             # single frame across all latent frames.
             latent_mask = first_frame.expand(-1, -1, f_lat, -1, -1)
         else:
