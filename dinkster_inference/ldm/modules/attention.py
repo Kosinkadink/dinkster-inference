@@ -103,14 +103,20 @@ class ComfyAttention(nn.Module):
         self.function = None
         metadata = state_dict.pop(prefix + "config", None)
         if metadata is not None:
-            config = json.loads(metadata.numpy().tobytes())
-            method = config.get("attention")
-            if method == "comfy_kitchen_int8":
-                self.config = config
-                if COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE and comfy_kitchen.int8_attention_is_available(model_management.get_torch_device()):
-                    self.function = attention_comfy_kitchen_int8
-            else:
-                logging.warning(f"Ignoring unsupported attention method {method!r} for {prefix.rstrip('.')}")
+            self.config = json.loads(metadata.numpy().tobytes())
+            configs = self.config if isinstance(self.config, list) else [self.config]
+            for config in configs:
+                method = config.get("attention")
+                if method == "comfy_kitchen_int8":
+                    if COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE and comfy_kitchen.int8_attention_is_available(model_management.get_torch_device()):
+                        self.function = attention_comfy_kitchen_int8
+                elif method == "comfy_kitchen_sol":
+                    if comfy_kitchen.sol_attn_is_available(model_management.get_torch_device()):
+                        self.function = functools.partial(attention_comfy_kitchen_sol, sol_options={"tau": config.get("tau", 1.0)})
+                else:
+                    logging.warning(f"Ignoring unknown attention method {method!r} for {prefix.rstrip('.')}")
+                if self.function is not None:
+                    break
         super()._load_from_state_dict(state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs)
 
     def _save_to_state_dict(self, destination, prefix, keep_vars):
