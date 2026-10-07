@@ -21,7 +21,7 @@ tensor_q = (tensor / scale).to(low_precision_dtype)
 # De-Quantization
 tensor_dq = tensor_q.to(fp16) * scale
 
-tensor_dq ~ tensor
+tensor_dq ~ tensor
 ```
 
 Given that additional information (scaling factor) is needed to "interpret" the quantized values, we describe those as derived datatypes.
@@ -31,15 +31,15 @@ Given that additional information (scaling factor) is needed to "interpret" the 
 
 ```
 QuantizedTensor (torch.Tensor subclass)
-  ↓ __torch_dispatch__
+  -> __torch_dispatch__
 Two-Level Registry (generic + layout handlers)
-  ↓
+  ->
 MixedPrecisionOps + Metadata Detection
 ```
 
 ### Representation
 
-To represent these derived datatypes, ComfyUI uses a subclass of torch.Tensor to implements these using the `QuantizedTensor` class found in `comfy/quant_ops.py`
+To represent these derived datatypes, ComfyUI uses a subclass of torch.Tensor to implements these using the `QuantizedTensor` class found in `dinkster_inference/quant_ops.py`
 
 A `Layout` class defines how a specific quantization format behaves:
 - Required parameters
@@ -47,7 +47,7 @@ A `Layout` class defines how a specific quantization format behaves:
 - De-Quantize method
 
 ```python
-from comfy.quant_ops import QuantizedLayout
+from dinkster_inference.quant_ops import QuantizedLayout
 
 class MyLayout(QuantizedLayout):
     @classmethod
@@ -67,7 +67,7 @@ The first is a **generic registry** that handles operations common to all quanti
 
 The second registry is layout-specific and allows to implement fast-paths like nn.Linear.
 ```python
-from comfy.quant_ops import register_layout_op
+from dinkster_inference.quant_ops import register_layout_op
 
 @register_layout_op(torch.ops.aten.linear.default, MyLayout)
 def my_linear(func, args, kwargs):
@@ -80,7 +80,7 @@ For any unsupported operation, QuantizedTensor will fallback to call `dequantize
 
 ### Mixed Precision
 
-The `MixedPrecisionOps` class (lines 542-648 in `comfy/ops.py`) enables per-layer quantization decisions, allowing different layers in a model to use different precisions. This is activated when a model config contains a `layer_quant_config` dictionary that specifies which layers should be quantized and how.
+The `MixedPrecisionOps` class (lines 542-648 in `dinkster_inference/ops.py`) enables per-layer quantization decisions, allowing different layers in a model to use different precisions. This is activated when a model config contains a `layer_quant_config` dictionary that specifies which layers should be quantized and how.
 
 **Architecture:**
 
@@ -125,7 +125,7 @@ We define 4 possible scaling parameters that should cover most recipes in the ne
 |--------|---------------|--------------|----------------|-----------------|-------------|
 | float8_e4m3fn | float32 | float32 (scalar) | - | - | float32 (scalar) |
 
-You can find the defined formats in `comfy/quant_ops.py` (QUANT_ALGOS).
+You can find the defined formats in `dinkster_inference/quant_ops.py` (QUANT_ALGOS).
 
 ### Quantization Metadata
 
@@ -155,23 +155,43 @@ To create compatible checkpoints, use any quantization tool provided the output 
 ### Diffusion attention preferences
 
 A diffusion attention module can have a `<module path>.comfy_attention.config` entry whose
-uint8 tensor contains UTF-8 JSON:
+uint8 tensor contains UTF-8 JSON. Use a single preference:
 
 ```json
 {"attention": "comfy_kitchen_int8"}
 ```
 
-Use the module that performs attention, such as `transformer_blocks.0.attn` for
-Qwen Image 2.1 or `blocks.0.attn` for MiniMax H3.
+Or an ordered list of preferences, each with its own options:
 
-Only `comfy_kitchen_int8` is supported. Invalid targets and other method names
-are ignored with a warning during loading, leaving normal attention selection.
-Kitchen INT8 support is checked when each preference is loaded
-for the primary device; unsupported devices keep normal attention selection.
-Explicit attention overrides retain priority.
-The `ComfyAttention` child module loads and saves its own metadata through normal
-state-dict loading and saving. Preferences do not enable weight
-quantization. Text encoder and VAE loaders do not apply these preferences.
+```json
+[
+  {"attention": "comfy_kitchen_sol", "tau": 1.0},
+  {"attention": "comfy_kitchen_int8"}
+]
+```
+
+Use the module that performs attention, such as `transformer_blocks.0.attn` for
+Qwen Image 2.1 or `blocks.0.attn` for MiniMax H3. The target must have a
+`ComfyAttention` child module.
+
+Only `comfy_kitchen_int8` and `comfy_kitchen_sol` are accepted. ComfyUI selects
+the first available preference during loading, checking support for the primary
+device. All other method names are skipped with a warning. Unavailable methods
+are skipped. If none are available, or the list is empty, normal attention
+selection remains in effect. Explicit attention overrides retain priority.
+
+`comfy_kitchen_sol` supports only `tau` as an optional field alongside
+`attention`. It defaults to `1.0` and sets the routing threshold; higher values
+route fewer blocks exactly. Other SOL options use Comfy Kitchen's defaults.
+
+Bake SOL preferences into modules with compatible inputs: matching FP16/BF16
+Q/K/V tensors with a head dimension of 128. ComfyUI trusts the checkpoint's
+choice; `low_precision_attention=False` does not disable SOL. Masked calls raise
+a RuntimeError; the fork's SOL adapter does not fall back to PyTorch attention.
+
+The `ComfyAttention` child module loads and saves its metadata through normal
+state-dict loading and saving, preserving the full preference list and options,
+including unsupported entries. Preferences do not enable weight quantization.
 
 ### Weight Quantization
 

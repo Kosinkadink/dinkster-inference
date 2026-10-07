@@ -1,3 +1,4 @@
+import json
 import logging
 
 import pytest
@@ -169,3 +170,41 @@ def test_chunked_sol_attention_projects_bounded_h3_slices(monkeypatch):
     assert output.shape == (4097, 32)
     assert key_mean == "kmean"
     assert value_scale == "vscale"
+
+
+@pytest.mark.parametrize("sol_available", [True, False])
+def test_attention_preference_list_selects_first_available(monkeypatch, caplog, sol_available):
+    configs = [
+        {"attention": "unknown"},
+        {"attention": "comfy_kitchen_sol", "tau": 1.3},
+        {"attention": "comfy_kitchen_int8"},
+    ]
+    monkeypatch.setattr(attention, "COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE", True)
+    monkeypatch.setattr(attention.comfy_kitchen, "int8_attention_is_available", lambda device: True)
+    monkeypatch.setattr(attention.comfy_kitchen, "sol_attn_is_available", lambda device: sol_available)
+    calls = []
+
+    def sol_attn(q, k, v, **options):
+        calls.append(options)
+        return q + 3
+
+    monkeypatch.setattr(attention.comfy_kitchen, "sol_attn", sol_attn)
+    preference = attention.ComfyAttention()
+    metadata = torch.tensor(list(json.dumps(configs).encode("utf-8")), dtype=torch.uint8)
+    with caplog.at_level(logging.WARNING):
+        preference.load_state_dict({"config": metadata})
+
+    assert "Ignoring unknown attention method 'unknown'" in caplog.text
+    assert preference.config == configs
+    assert json.loads(preference.state_dict()["config"].numpy().tobytes()) == configs
+    if sol_available:
+        q = torch.arange(24.0).reshape(1, 2, 3, 4)
+        result = preference.function(q, q + 100, q + 200, 2,
+                                     skip_reshape=True, skip_output_reshape=True)
+        assert calls == [{"tau": 1.3}]
+        assert torch.equal(result, q + 3)
+        with pytest.raises(RuntimeError, match="does not support an attention mask"):
+            preference.function(q, q, q, 2, mask=torch.ones(3, 3), skip_reshape=True)
+    else:
+        assert preference.function is attention.attention_comfy_kitchen_int8
+        assert calls == []
