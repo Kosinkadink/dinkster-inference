@@ -21,6 +21,7 @@ jobs:
         run: |
           python -m pip install dist/*.whl
           python -m pip install -r tests-unit/requirements.txt
+          python -m pip install ruff
       - name: Verify standalone imports
         run: |
           if ! python -c "import dinkster_inference.cli_args as c; c.args.cpu = True; import dinkster_inference.sd, dinkster_inference.samplers, dinkster_inference.model_management" 2>import-error.log; then
@@ -28,5 +29,9 @@ jobs:
             echo "::error title=Standalone import failed::$message"
             exit 1
           fi
+      - name: Check inference and training contract lint
+        run: python -m ruff check dinkster_inference tests-unit/comfy_test/training_api_test.py
+      - name: Verify training API contract
+        run: python -m pytest -q tests-unit/comfy_test/training_api_test.py
       - name: Run retained library tests
-        run: python -m pytest -q tests-unit/comfy_test tests-unit/comfy_quant tests-unit/deploy_environment_test.py
+        run: python -m pytest -q tests-unit/comfy_test tests-unit/comfy_quant tests-unit/deploy_environment_test.py --ignore=tests-unit/comfy_test/training_api_test.py

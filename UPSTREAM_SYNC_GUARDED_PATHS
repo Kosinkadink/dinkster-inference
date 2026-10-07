@@ -36,6 +36,7 @@ tests-unit/comfy_test/storage_test.py
 tests-unit/comfy_test/test_contribution_gain.py
 tests-unit/comfy_test/test_model_management_cpu.py
 tests-unit/comfy_test/test_patch_program.py
+tests-unit/comfy_test/training_api_test.py
 tests-unit/comfy_test/window_execution_test.py
 tests-unit/comfy_test/window_plan_test.py
 tools/rewrite_upstream_imports.py

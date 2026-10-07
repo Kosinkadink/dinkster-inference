@@ -350,8 +350,34 @@ class RuntimePatchEntry:
             raise RuntimeError(f"runtime patch '{self.name}' changed after binding")
 
 
+@dataclass(frozen=True)
+class TrainingSettingsEntry:
+    enabled: bool = False
+    fp8_backward: bool = False
+
+    def descriptor(self) -> dict[str, object]:
+        return {
+            "kind": "training_settings",
+            "enabled": self.enabled,
+            "fp8_backward": self.fp8_backward,
+        }
+
+
+@dataclass(frozen=True)
+class GradientCheckpointEntry:
+    target: str
+
+    def descriptor(self) -> dict[str, object]:
+        return {"kind": "gradient_checkpoint", "target": self.target}
+
+
 PatchEntry = (
-    WeightDeltaEntry | ModuleInsertionEntry | ObjectReplacementEntry | RuntimePatchEntry
+    WeightDeltaEntry
+    | ModuleInsertionEntry
+    | ObjectReplacementEntry
+    | RuntimePatchEntry
+    | TrainingSettingsEntry
+    | GradientCheckpointEntry
 )
 
 
@@ -373,6 +399,8 @@ class PatchProgram:
     def validate_resources(self, target: str | None = None) -> None:
         tensor_digests: dict[int, str] = {}
         for entry in self.entries:
+            if isinstance(entry, (TrainingSettingsEntry, GradientCheckpointEntry)):
+                continue
             if isinstance(
                 entry, (ModuleInsertionEntry, ObjectReplacementEntry, RuntimePatchEntry)
             ):
@@ -391,6 +419,34 @@ class PatchProgram:
                 raise RuntimeError(
                     f"patch function for '{entry.target}' changed after binding"
                 )
+
+    def with_training_settings(self, enabled=False, fp8_backward=False) -> PatchProgram:
+        if fp8_backward and not enabled:
+            raise ValueError("FP8 backward requires training mode")
+        retained = tuple(
+            e for e in self.entries if not isinstance(e, TrainingSettingsEntry)
+        )
+        return PatchProgram(
+            (*retained, TrainingSettingsEntry(bool(enabled), bool(fp8_backward)))
+        )
+
+    def training_settings(self) -> TrainingSettingsEntry:
+        return next(
+            (e for e in reversed(self.entries) if isinstance(e, TrainingSettingsEntry)),
+            TrainingSettingsEntry(),
+        )
+
+    def with_gradient_checkpoints(self, targets: Iterable[str]) -> PatchProgram:
+        targets = tuple(targets)
+        if len(targets) != len(set(targets)):
+            raise ValueError("gradient checkpoint targets must be unique")
+        retained = tuple(
+            e for e in self.entries if not isinstance(e, GradientCheckpointEntry)
+        )
+        return PatchProgram((*retained, *(GradientCheckpointEntry(t) for t in targets)))
+
+    def gradient_checkpoints(self) -> tuple[GradientCheckpointEntry, ...]:
+        return tuple(e for e in self.entries if isinstance(e, GradientCheckpointEntry))
 
     def append_weight_delta(
         self,
