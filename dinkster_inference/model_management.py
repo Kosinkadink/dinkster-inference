@@ -29,6 +29,7 @@ import weakref
 import gc
 import os
 from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 import dinkster_inference.memory_management
 import dinkster_inference.system_memory
 import dinkster_inference.utils
@@ -63,9 +64,26 @@ cpu_state = CPUState.GPU
 total_vram = 0
 
 
-# Training Related State
-in_training = False
-training_fp8_bwd = False
+_training_settings = ContextVar("dinkster_training_settings", default=(False, False))
+
+
+@contextmanager
+def training_settings_scope(enabled=False, fp8_backward=False):
+    """Enter a model's execution policy, including checkpoint recomputation."""
+    token = _training_settings.set((enabled, fp8_backward))
+    try:
+        yield
+    finally:
+        _training_settings.reset(token)
+
+
+def __getattr__(name):
+    # Upstream model and kernel consumers retain their read interface, not state.
+    if name == "in_training":
+        return _training_settings.get()[0]
+    if name == "training_fp8_bwd":
+        return _training_settings.get()[1]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def get_supported_float8_types():

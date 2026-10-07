@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import collections
+import functools
 import inspect
 import logging
 import math
@@ -30,6 +31,7 @@ from typing import Callable, Optional
 
 import torch
 import tqdm
+from torch.utils.checkpoint import checkpoint
 
 import dinkster_inference.float
 import dinkster_inference.hooks
@@ -443,6 +445,7 @@ class ModelPatcher:
         self.backup = {}
         self.backup_buffers = {}
         self.object_patches_backup = {}
+        self._training_forward_backup = []
         self.weight_wrapper_patches = {}
         self.load_device = load_device
         self.offload_device = offload_device
@@ -554,6 +557,8 @@ class ModelPatcher:
         n.pin_offloaded_weights = self.pin_offloaded_weights
 
         n.backup, n.backup_buffers, n.object_patches_backup, n.pinned = model_override[1]
+        if n.model is self.model:
+            n._training_forward_backup = self._training_forward_backup
 
         # attachments
         n.attachments = {}
@@ -1007,6 +1012,57 @@ class ModelPatcher:
         self._set_patch_program(program)
         self.patches_uuid = program.digest
 
+    def set_training_settings(self, enabled=False, fp8_backward=False):
+        self._set_patch_program(self.patch_program.with_training_settings(enabled, fp8_backward))
+        self.patches_uuid = self.patch_program.digest
+
+    def set_gradient_checkpoints(self, targets):
+        """Checkpoint named module forwards; an empty path selects the root."""
+        targets = tuple(targets)
+        for target in targets:
+            self.model.get_submodule(target)
+        self._set_patch_program(self.patch_program.with_gradient_checkpoints(targets))
+        self.patches_uuid = self.patch_program.digest
+
+    def _restore_training_forwards(self):
+        for module, had_forward, original in reversed(self._training_forward_backup):
+            if had_forward:
+                module.forward = original
+            else:
+                del module.forward
+        self._training_forward_backup.clear()
+
+    def _apply_training_forwards(self):
+        self._restore_training_forwards()
+        settings = self.patch_program.training_settings()
+        checkpoint_targets = {e.target for e in self.patch_program.gradient_checkpoints()}
+        if checkpoint_targets and not settings.enabled:
+            raise ValueError("gradient checkpointing requires training mode")
+        targets = {"", *checkpoint_targets}
+        if hasattr(self.model, "diffusion_model"):
+            targets.add("diffusion_model")
+        modules = [(target, self.model.get_submodule(target)) for target in sorted(targets)]
+        for target, module in modules:
+            original = module.forward
+            self._training_forward_backup.append((module, "forward" in module.__dict__, original))
+
+            def wrap(forward, checkpointed):
+                def contexts():
+                    scope = dinkster_inference.model_management.training_settings_scope
+                    return (scope(settings.enabled, settings.fp8_backward),
+                            scope(settings.enabled, settings.fp8_backward))
+
+                @functools.wraps(forward)
+                def scoped(*args, **kwargs):
+                    with dinkster_inference.model_management.training_settings_scope(settings.enabled, settings.fp8_backward):
+                        if checkpointed and torch.is_grad_enabled():
+                            return checkpoint(forward, *args, use_reentrant=False,
+                                              context_fn=contexts, **kwargs)
+                        return forward(*args, **kwargs)
+                return scoped
+
+            module.forward = wrap(original, target in checkpoint_targets)
+
     def _set_patch_program(self, program):
         self.patch_program = program
         patches = program.weight_patches()
@@ -1333,6 +1389,7 @@ class ModelPatcher:
             self.apply_hooks(self.forced_hooks, force_apply=True)
 
     def patch_model(self, device_to=None, lowvram_model_memory=0, load_weights=True, force_patch_weights=False):
+        self._restore_training_forwards()
         with self.use_ejected():
             self._validate_patch_program()
             for k in self.object_patches:
@@ -1696,13 +1753,14 @@ class ModelPatcher:
         if self.is_injected or self.skip_injection:
             return
         self._materialize_module_insertions()
-        if self._materialized_insertions:
-            self.is_injected = True
+        self._apply_training_forwards()
+        self.is_injected = bool(self._materialized_insertions or self._training_forward_backup)
         if self.is_injected:
             for callback in self.get_all_callbacks(CallbacksMP.ON_INJECT_MODEL):
                 callback(self)
 
     def eject_model(self):
+        self._restore_training_forwards()
         if not self.is_injected and not self._materialized_insertions:
             return
         self.is_injected = False
