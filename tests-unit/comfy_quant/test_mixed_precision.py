@@ -18,6 +18,7 @@ if not has_gpu():
 
 from dinkster_inference import ops
 from dinkster_inference.quant_ops import QUANT_ALGOS, QuantizedTensor
+from dinkster_inference.weight_adapter.bypass import BypassForwardHook
 import dinkster_inference.utils
 
 
@@ -376,6 +377,36 @@ class TestMixedPrecisionOps(unittest.TestCase):
             ops.INPUT_ACT_EAGER["swiglu"](x), layer.weight.dequantize(), bias
         )
         torch.testing.assert_close(output, expected)
+
+    def test_linear_input_act_preserves_scheduled_bypass_and_restores_forward_flag(self):
+        layer = ops.disable_weight_init.Linear(3, 2, device="cpu", dtype=torch.float32)
+        layer.weight = torch.nn.Parameter(torch.tensor([[1.0, -2.0, 0.5], [-0.5, 3.0, 2.0]]))
+        layer.bias = torch.nn.Parameter(torch.tensor([0.25, -0.75]))
+        x = torch.tensor([[1.0, -0.5, 2.0], [-2.0, 1.5, 0.25]])
+        residual = torch.tensor([[3.0, -1.0], [0.5, 4.0]])
+        residual_scale = torch.tensor([0.25, 0.75])
+        activated = torch.nn.functional.gelu(x, approximate="tanh")
+        base = torch.nn.functional.linear(activated, layer.weight, layer.bias)
+        delta = activated[:, :2] * torch.tensor([2.0, -3.0])
+        for original_flag in (False, True):
+            for gain in (0.0, 0.4, 1.0):
+                with self.subTest(original_flag=original_flag, gain=gain):
+                    layer.comfy_force_forward = original_flag
+                    original_forward = layer.forward
+                    adapter = SimpleNamespace(h=lambda value, output: value[:, :2] * torch.tensor([2.0, -3.0]), g=lambda value: value)
+                    hook = BypassForwardHook(layer, adapter, multiplier_provider=lambda output: gain)
+                    hook.inject(device=torch.device("cpu"))
+                    try:
+                        self.assertTrue(layer.comfy_force_forward)
+                        with unittest.mock.patch.object(ops, "_fp16_linear_wanted", return_value=True), unittest.mock.patch.object(
+                            ops, "linear_input_act_", side_effect=AssertionError("Fused path skipped bypass")
+                        ):
+                            output = ops.linear_input_act(layer, x, "gelu_tanh", residual=residual, residual_scale=residual_scale)
+                        torch.testing.assert_close(output, residual + (base + delta * gain) * residual_scale)
+                    finally:
+                        hook.eject()
+                    self.assertEqual(layer.comfy_force_forward, original_flag)
+                    self.assertEqual(layer.forward, original_forward)
 
     def test_supports_int8_compute_treats_mps_mode_as_unsupported_when_device_is_none(self):
         """Call sites (like pick_operations' default) may omit load_device. On an
