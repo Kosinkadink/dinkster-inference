@@ -17,6 +17,7 @@ from .diffusionmodules.util import AlphaBlender, timestep_embedding
 from .sub_quadratic_attention import efficient_dot_product_attention
 
 from dinkster_inference import model_management
+from dinkster_inference.configurable import ConfigurableModule
 import dinkster_inference.model_prefetch
 
 SOL_ATTN_PRODUCER_CHUNK = 4096
@@ -92,11 +93,16 @@ def get_attention_function(
     return functions[name]
 
 
-class ComfyAttention(nn.Module):
+class ComfyAttention(ConfigurableModule):
     def __init__(self):
         super().__init__()
         self.config = None
         self.function = None
+
+    def with_config(self, encoded_config):
+        attention = ComfyAttention()
+        attention.load_state_dict({"config": encoded_config})
+        return attention
 
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
         self.config = None
