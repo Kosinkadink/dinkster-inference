@@ -9,6 +9,9 @@ from dinkster_inference.cli_args import args
 args.cpu = True
 
 from dinkster_inference.ldm.modules import attention
+from dinkster_inference.hooks import WeightHook
+from dinkster_inference.lora import load_lora
+from dinkster_inference.model_patcher import ModelPatcher, ModelPatcherDynamic
 
 
 def test_attention_registries_are_independently_owned():
@@ -208,3 +211,41 @@ def test_attention_preference_list_selects_first_available(monkeypatch, caplog, 
     else:
         assert preference.function is attention.attention_comfy_kitchen_int8
         assert calls == []
+
+
+@pytest.mark.parametrize("patcher_type", [ModelPatcher, ModelPatcherDynamic])
+@pytest.mark.parametrize("strength", [0.0, 0.5])
+def test_lora_attention_config_replacement_is_clone_local_and_reversible(monkeypatch, patcher_type, strength):
+    monkeypatch.setattr(attention.comfy_kitchen, "sol_attn_is_available", lambda device: True)
+    model = torch.nn.Module()
+    model.linear = torch.nn.Linear(2, 2, bias=False)
+    original_config = {"attention": "comfy_kitchen_sol", "tau": 0.75}
+    updated_config = {"attention": "comfy_kitchen_sol", "tau": 1.7}
+    encode = lambda value: torch.tensor(list(json.dumps(value).encode("utf-8")), dtype=torch.uint8)
+    model.preference = attention.ComfyAttention().with_config(encode(original_config))
+    original = model.preference
+    weight = model.linear.weight.detach().clone()
+    parent = patcher_type(model, torch.device("cpu"), torch.device("cpu"))
+    child = parent.clone()
+    delta = torch.tensor([[1.0, -2.0], [3.0, 0.5]])
+    patches = load_lora({"preference.config": encode(updated_config),
+                         "missing.config": encode(updated_config),
+                         "linear.config": encode(updated_config),
+                         "linear.diff": delta}, {"linear": "linear.weight"})
+
+    assert set(child.add_patches(patches, strength_patch=strength)) == {"preference.config", "linear.weight"}
+    replacement = child.get_model_object("preference")
+    assert replacement.config == (updated_config if strength else original_config)
+    assert parent.get_model_object("preference") is original
+    assert original.config == original_config
+    assert child.add_hook_patches(WeightHook(), {"preference.config": patches["preference.config"]}) == []
+
+    child.patch_model(device_to=torch.device("cpu"))
+    assert model.preference is replacement
+    assert model.preference.config == (updated_config if strength else original_config)
+    torch.testing.assert_close(model.linear.weight, weight + strength * delta)
+    child.unpatch_model()
+
+    assert model.preference is original
+    assert model.preference.config == original_config
+    torch.testing.assert_close(model.linear.weight, weight)

@@ -42,6 +42,7 @@ import dinkster_inference.patcher_extension
 import dinkster_inference.utils
 import comfy_aimdo.host_buffer
 from dinkster_inference.comfy_types import UnetWrapperFunction
+from dinkster_inference.configurable import ConfigurableModule
 from dinkster_inference.contribution_gain import ContributionGain
 from dinkster_inference.internal_logging import detail
 from dinkster_inference.patch_program import ModuleInsertionEntry, PatchProgram
@@ -1106,6 +1107,19 @@ class ModelPatcher:
                     if len(k) > 2:
                         function = k[2]
 
+                patch = patches[k]
+                if isinstance(patch, tuple) and len(patch) == 2 and patch[0] == "config":
+                    module_name, _, attribute = key.rpartition(".")
+                    try:
+                        module = self.get_model_object(module_name)
+                    except AttributeError:
+                        continue
+                    if attribute == "config" and isinstance(module, ConfigurableModule):
+                        p.add(k)
+                        if strength_patch != 0:
+                            self.add_object_patch(module_name, module.with_config(patch[1][0]))
+                    continue
+
                 if key in model_sd:
                     p.add(k)
                     additions.append((key, patches[k], strength_patch, strength_model, offset, function))
@@ -1880,6 +1894,8 @@ class ModelPatcher:
             bypass_entries = []
             bypass_namespace = f"scheduled-bypass:{len(self.hook_patches)}"
             for k in patches:
+                if isinstance(patches[k], tuple) and len(patches[k]) == 2 and patches[k][0] == "config":
+                    continue
                 offset = None
                 function = None
                 if isinstance(k, str):
