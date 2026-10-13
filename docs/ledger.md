@@ -1,12 +1,12 @@
 # Fork ledger
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`8010b48d2c1be986613f8e8c761527d205bd756f`.
+`c21e54799841a3ce634d07bc4b3f93cdcee86911`.
 
 | File or subsystem | Tier | Reason |
 | --- | --- | --- |
 | `dinkster_inference/` except entries below | kept upstream | ComfyUI inference implementation, mechanically renamed from `comfy`, rewritten to import `dinkster_inference`, and source-normalized to ASCII without runtime changes |
-| `dinkster_inference/cli_args.py` assets flags | changed by us | Retains the existing inert `--enable-assets` and `--enable-asset-hashing` options; omits the upstream `--disable-assets` option and assets-default help changes because the assets application is not shipped |
+| `dinkster_inference/cli_args.py` assets flags | changed by us | Retains the existing inert `--enable-assets` and `--enable-asset-hashing` options; omits the upstream `--disable-assets` and `--previews-directory` options and assets-default help changes because the assets application is not shipped |
 | `dinkster_inference/hooks.py` | changed by us | Owns `conditioning_set_values` instead of importing the deleted application helper |
 | `dinkster_inference/window_plan.py` | ours only | Compiles layered media-axis window declarations into canonical joint windows with deterministic weighted merge semantics |
 | `dinkster_inference/window_execution.py`, `dinkster_inference/samplers.py` window-plan dispatch | changed by us | Evaluates compiled joint windows through declared tensor kinds, gathers full-domain fields per window, and merges once with per-occurrence accumulation |
