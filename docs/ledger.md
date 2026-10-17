@@ -1,7 +1,7 @@
 # Fork ledger
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`6da3d1a5f5125656a4194a5ac0cef07341d44a83`.
+`ce1e922d8623bb507180e32a0c01a7d0e29edef7`.
 
 | File or subsystem | Tier | Reason |
 | --- | --- | --- |
@@ -25,8 +25,11 @@ Upstream fork point: `comfyanonymous/ComfyUI` commit
 | `dinkster_inference/ldm/sam3d_body/model/model.py` | changed by us | Imports the relocated face landmarker from the library |
 | `tests-unit/comfy_test/`, `tests-unit/comfy_quant/`, `tests-unit/deploy_environment_test.py` | changed by us | Retains pure-library tests and rewrites their package imports |
 | `pyproject.toml` | ours only | Builds distribution `dinkster-inference`, discovers `dinkster_inference`, and declares runtime dependencies |
+| `requirements.txt` | changed by us | Tracks workflow templates 0.11.87 while retaining frontend 1.53.10 and embedded docs 0.5.14; keeps comfy-kitchen synchronized with wheel metadata |
 | `tools/rewrite_upstream_imports.py` | ours only | Applies the required package import rewrite after upstream cherry-picks |
 | `.github/workflows/ci.yml` | ours only | Builds and installs the wheel, verifies standalone imports, and runs the retained library tests |
+| `QUANTIZATION.md` | changed by us | Rewrites source links to `dinkster_inference` and documents that masked SOL calls raise RuntimeError instead of falling back to PyTorch attention |
 | ComfyUI application and release workflows | changed by us | Removed because their server, API, frontend, packaging, and release targets are not part of this library |
 | ComfyUI application, server, API, execution, nodes, extras, middleware, assets, model directories, and application tests | changed by us | Removed because this repository distributes the inference library only |
+| `comfy_extras/nodes_textgen.py` | omitted upstream | TextGenerate node controls are application-only; retains the corresponding Qwen think-block template fixes in the library text encoders |
 | `docs/ledger.md` and `README.md` | ours only | Documents package use, provenance, and maintained differences |
