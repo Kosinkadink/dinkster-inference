@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from dinkster_inference.cli_args import args
@@ -6,6 +7,7 @@ if not torch.cuda.is_available():
     args.cpu = True
 
 import dinkster_inference.quant_ops
+from dinkster_inference.sd import VAE
 from dinkster_inference.ldm.minimax.vae import Attention, MiniMaxH3VideoVAE
 
 
@@ -93,3 +95,32 @@ def test_still_decodes_as_first_latent_of_a_full_clip():
     assert out.shape == (1, 3, 1, 640, 384)
     assert set(seen) == {vae.tokens_chunk_size}
     torch.testing.assert_close(out, torch.full_like(out, vae.frame_pre_padding / 100))
+
+
+@pytest.mark.parametrize("encoder", [True, False], ids=["lite-encoder-only", "decoder-only"])
+def test_lightvae_partial_checkpoint_round_trip(encoder):
+    with torch.device("meta"):
+        model = MiniMaxH3VideoVAE(
+            encoder=encoder,
+            decoder=not encoder,
+            encoder_kept_blocks={(0, 1), (2, 0), (4, 1)},
+            num_layers=1,
+        )
+        state = model.state_dict()
+        if encoder:
+            assert "encoder.down.0.block.1.conv1.weight" in state
+            assert "encoder.down.2.block.0.conv1.weight" in state
+            assert "encoder.down.4.block.1.conv1.weight" in state
+            assert "encoder.down.5.block.0.nin_shortcut.weight" in state
+            assert "encoder.down.5.block.0.conv1.weight" not in state
+            assert "encoder.down.0.block.0.conv1.weight" not in state
+            assert not any(k.startswith(("decoder.", "post_quant_conv.")) for k in state)
+        else:
+            assert "decoder.transformer_blocks.0.scale1" in state
+            assert not any(k.startswith(("encoder.", "quant_conv.")) for k in state)
+
+        loaded = VAE(sd=state, device=torch.device("meta"), dtype=torch.float32)
+
+    assert isinstance(loaded.first_stage_model, MiniMaxH3VideoVAE)
+    assert loaded.latent_channels == 24
+    assert loaded.first_stage_model.state_dict().keys() == state.keys()
