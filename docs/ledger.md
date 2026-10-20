@@ -1,7 +1,7 @@
 # Fork ledger
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`e3bee7ffcb7d6547ed0bcd15221792f3b8646b17`.
+`d52a7a5ef60b36062f7c3c69bd774f4c98b56eb0`.
 
 | File or subsystem | Tier | Reason |
 | --- | --- | --- |
@@ -25,12 +25,13 @@ Upstream fork point: `comfyanonymous/ComfyUI` commit
 | `dinkster_inference/ldm/sam3d_body/model/model.py` | changed by us | Imports the relocated face landmarker from the library |
 | `tests-unit/comfy_test/`, `tests-unit/comfy_quant/`, `tests-unit/deploy_environment_test.py` | changed by us | Retains pure-library tests and rewrites their package imports |
 | `pyproject.toml` | ours only | Builds distribution `dinkster-inference` at version 0.1.0, discovers `dinkster_inference`, and declares runtime dependencies; the upstream 0.42.0 package version bump is ledger-only |
-| `requirements.txt` | changed by us | Tracks workflow templates 0.11.89 while retaining frontend 1.53.10 and embedded docs 0.5.14; keeps comfy-kitchen synchronized with wheel metadata |
+| `requirements.txt` | changed by us | Tracks workflow templates 0.11.93 while retaining frontend 1.53.10 and embedded docs 0.5.14; keeps comfy-kitchen synchronized with wheel metadata |
 | `tools/rewrite_upstream_imports.py` | ours only | Applies the required package import rewrite after upstream cherry-picks |
 | `.github/workflows/ci.yml` | ours only | Builds and installs the wheel, verifies standalone imports, and runs the retained library tests |
 | `QUANTIZATION.md` | changed by us | Rewrites source links to `dinkster_inference` and documents that masked SOL calls raise RuntimeError instead of falling back to PyTorch attention |
 | ComfyUI application and release workflows | changed by us | Removed because their server, API, frontend, packaging, and release targets are not part of this library |
 | ComfyUI application, server, API, execution, nodes, extras, middleware, assets, model directories, and application tests | changed by us | Removed because this repository distributes the inference library only |
+| Upstream `README.md`, `comfy_api_nodes/apis/bfl.py`, `comfy_api_nodes/apis/bria.py`, `comfy_api_nodes/nodes_bfl.py`, `comfy_api_nodes/nodes_bria.py` | omitted upstream | The MOSS-image support announcement, FLUX 3 Max partner nodes, and FIBO 2.0 partner nodes are ledger-only; the fork retains its own README and does not ship API application nodes |
 | `comfy_api_nodes/apis/clarityai.py`, `comfy_api_nodes/nodes_clarityai.py`, `comfy_api_nodes/nodes_bfl.py`, `comfy_extras/nodes_moss_image.py` | omitted upstream | ClarityAI partner nodes, BFL node changes, and MOSS-image color-depth application nodes are ledger-only; the corresponding library control adapter support is retained |
 | `comfy_api_nodes/apis/heygen.py`, `comfy_api_nodes/nodes_heygen.py` | omitted upstream | HeyGen partner nodes are ledger-only because API application nodes are not shipped |
 | `comfy_api/feature_flags.py`, `comfy_api_nodes/nodes_sonilo.py`, `comfy_api_nodes/util/_helpers.py`, `comfy_api_nodes/util/client.py`, `comfy_api_nodes/util/download_helpers.py`, `tests-unit/comfy_api_nodes_test/partner_node_token_test.py`, `tests-unit/feature_flags_test.py` | omitted upstream | Partner-node sign-in token renewal is ledger-only because these API application paths and tests are not shipped |
