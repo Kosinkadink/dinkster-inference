@@ -139,6 +139,7 @@ def test_sync_preserves_owner_history_and_reports_upstream(sync_repo, owner_chan
     if owner_change == "ledger":
         files = {"docs/ledger.md": f"Upstream fork point: `{old}`\nOwner notes\n"}
     elif owner_change == "marker-removal":
+        marker = commit(marker, {"dinkster_inference/owner.py": "owner work\n"}, "Owner library update")
         files = {"UPSTREAM_SYNC_CONFLICTS.md": None}
     else:
         files = {"dinkster_inference/owner.py": "owner work\n"}
@@ -156,6 +157,33 @@ def test_sync_preserves_owner_history_and_reports_upstream(sync_repo, owner_chan
     assert github["draft"] is False
     assert len(github["comments"]) == 1
     assert target in github["comments"][0]
+
+
+@pytest.mark.parametrize("replacement", ["no-open-pr", "squash-merged", "squash-merged-before-main-tip"])
+def test_sync_replaces_inactive_or_already_merged_owner_history(sync_repo, replacement):
+    repo, remote, commit, base, old, target, marker, state, output, run = sync_repo
+    files = {"docs/ledger.md": f"Upstream fork point: `{old}`\n", "UPSTREAM_SYNC_CONFLICTS.md": None,
+             "dinkster_inference/owner.py": "owner work\n"}
+    head = commit(marker, files, "Owner resolution")
+    git(repo, "push", "origin", f"{head}:refs/heads/upstream-sync")
+    if replacement == "no-open-pr":
+        github = json.loads(state.read_text())
+        github["number"] = ""
+        state.write_text(json.dumps(github))
+    else:
+        main = commit(base, files, "Squash upstream sync")
+        assert git(repo, "rev-parse", f"{main}^{{tree}}") == git(repo, "rev-parse", f"{head}^{{tree}}")
+        if replacement == "squash-merged-before-main-tip":
+            main = commit(main, {"dinkster_inference/later.py": "later main work\n"}, "Later main work")
+        git(repo, "update-ref", "refs/heads/main", main)
+        git(repo, "push", "origin", "main")
+    result = run("upstream")
+    assert result.returncode == 0, result.stderr
+    new_head = git(remote, "rev-parse", "refs/heads/upstream-sync")
+    assert new_head != head
+    path = "UPSTREAM_SYNC_CONFLICTS.md" if "conflict=true" in output.read_text() else "docs/ledger.md"
+    assert target in git(remote, "show", f"{new_head}:{path}")
+    assert json.loads(state.read_text())["comments"] == []
 
 
 @pytest.mark.parametrize("kind", ["marker", "ledger"])
