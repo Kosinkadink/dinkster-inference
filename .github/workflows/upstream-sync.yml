@@ -175,9 +175,21 @@ jobs:
               fi
               exit 0
             fi
-            owner_commits=$(python3 - <<'PY'
+            owner_commits=$(python3 - "$existing_pr" <<'PY'
           import re
           import subprocess
+          import sys
+
+          if not sys.argv[1]:
+              raise SystemExit(0)
+          branch_tree = subprocess.check_output(
+              ["git", "rev-parse", "origin/upstream-sync^{tree}"], text=True
+          ).strip()
+          main_trees = subprocess.check_output(
+              ["git", "log", "--format=%T", "origin/main"], text=True
+          ).splitlines()
+          if branch_tree in main_trees:
+              raise SystemExit(0)
 
           commits = subprocess.check_output(
               ["git", "rev-list", "--first-parent", "origin/main..origin/upstream-sync"], text=True
