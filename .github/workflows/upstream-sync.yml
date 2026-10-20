@@ -129,8 +129,10 @@ jobs:
           }
 
           existing_pr=$(gh pr list --repo "$REPOSITORY" --state open --head upstream-sync --json number --jq '.[0].number // empty')
-          if [ -n "$existing_pr" ] && git ls-remote --exit-code --heads origin upstream-sync >/dev/null; then
+          expected_head=
+          if git ls-remote --exit-code --heads origin upstream-sync >/dev/null; then
             git fetch --no-tags origin "refs/heads/upstream-sync:refs/remotes/origin/upstream-sync"
+            expected_head=$(git rev-parse origin/upstream-sync)
             branch_target=$(python3 - <<'PY'
           import re
           import subprocess
@@ -173,6 +175,39 @@ jobs:
               fi
               exit 0
             fi
+            owner_commits=$(python3 - <<'PY'
+          import re
+          import subprocess
+
+          commits = subprocess.check_output(
+              ["git", "rev-list", "--first-parent", "origin/main..origin/upstream-sync"], text=True
+          ).splitlines()
+          for commit in commits:
+              subject = subprocess.check_output(["git", "show", "-s", "--format=%s", commit], text=True).strip()
+              paths = set(subprocess.check_output(
+                  ["git", "diff", "--name-only", f"{commit}^", commit], text=True
+              ).splitlines())
+              marker = re.fullmatch(r"Record upstream sync conflicts through [0-9a-f]{8}", subject)
+              ledger = re.fullmatch(r"Sync ComfyUI upstream through [0-9a-f]{8}", subject)
+              if marker and paths == {"UPSTREAM_SYNC_CONFLICTS.md"}:
+                  continue
+              if ledger and paths == {"docs/ledger.md"}:
+                  continue
+              print(commit)
+          PY
+            )
+            if [ -n "$owner_commits" ]; then
+              echo "Preserving owner commits at $expected_head; upstream is $target."
+              if [ -n "$existing_pr" ]; then
+                notice="New upstream head: https://github.com/Comfy-Org/ComfyUI/commit/$target . Preserving owner commits on upstream-sync at $expected_head; the owner must incorporate this update."
+                comments=$(gh api --paginate "repos/$REPOSITORY/issues/$existing_pr/comments" --jq '.[].body')
+                if ! grep -Fxq -- "$notice" <<< "$comments"; then
+                  gh pr comment "$existing_pr" --repo "$REPOSITORY" --body "$notice"
+                fi
+              fi
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
 
           git switch --force-create upstream-sync origin/main
@@ -207,10 +242,7 @@ jobs:
             } > UPSTREAM_SYNC_CONFLICTS.md
             git add UPSTREAM_SYNC_CONFLICTS.md
             git commit -m "Record upstream sync conflicts through ${target:0:8}"
-            if git ls-remote --exit-code --heads origin upstream-sync >/dev/null; then
-              git fetch --no-tags origin "refs/heads/upstream-sync:refs/remotes/origin/upstream-sync"
-            fi
-            git push --force-with-lease origin HEAD:upstream-sync
+            git push --force-with-lease="refs/heads/upstream-sync:$expected_head" origin HEAD:upstream-sync
             echo "conflict=true" >> "$GITHUB_OUTPUT"
             {
               echo "conflicts<<EOF"
@@ -270,10 +302,7 @@ jobs:
           tree=$(git write-tree)
           commit=$(printf 'Sync ComfyUI upstream through %s\n' "${target:0:8}" | git commit-tree "$tree" -p "$base" -p "$target")
           git reset --hard "$commit"
-          if git ls-remote --exit-code --heads origin upstream-sync >/dev/null; then
-            git fetch --no-tags origin "refs/heads/upstream-sync:refs/remotes/origin/upstream-sync"
-          fi
-          git push --force-with-lease origin HEAD:upstream-sync
+          git push --force-with-lease="refs/heads/upstream-sync:$expected_head" origin HEAD:upstream-sync
           head=$(git rev-parse HEAD)
           echo "head=$head" >> "$GITHUB_OUTPUT"
 
@@ -347,9 +376,7 @@ jobs:
             pr=${url##*/}
           else
             gh pr edit "$pr" --repo "$REPOSITORY" --title "$title" --body-file "$body"
-            if [ "$requires_review" = "true" ]; then
-              gh pr ready "$pr" --repo "$REPOSITORY" --undo || true
-            else
+            if [ "$requires_review" != "true" ]; then
               gh pr ready "$pr" --repo "$REPOSITORY" || true
             fi
           fi
