@@ -1,7 +1,7 @@
 # Fork ledger
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`37ff76b4d3d47405ba46ac1e14698e280b70b33f`.
+`7a28332047b6af638dc6c7f72ef3481a718769fd`.
 
 | File or subsystem | Tier | Reason |
 | --- | --- | --- |
@@ -31,6 +31,8 @@ Upstream fork point: `comfyanonymous/ComfyUI` commit
 | `QUANTIZATION.md` | changed by us | Rewrites source links to `dinkster_inference` and documents that masked SOL calls raise RuntimeError instead of falling back to PyTorch attention |
 | ComfyUI application and release workflows | changed by us | Removed because their server, API, frontend, packaging, and release targets are not part of this library |
 | ComfyUI application, server, API, execution, nodes, extras, middleware, assets, model directories, and application tests | changed by us | Removed because this repository distributes the inference library only |
+| `app/agent_host.py`, `agent_requirements.txt`, `main.py`, `server.py`, `tests-unit/app_test/agent_host_test.py`, upstream `comfy/cli_args.py` agent flag | omitted upstream | The optional local agent host, comfy-agent dependency, startup/server integration and host tests are application-only; omits `--enable-agent` from `dinkster_inference/cli_args.py` because no shipped host consumes it |
+| `comfy_extras/nodes_images.py`, `tests-unit/comfy_extras_test/pad_image_test.py` | omitted upstream | Mirror padding and pad-to-multiple image nodes and their application tests are ledger-only because image-node applications are not shipped |
 | `dinkster_inference/ldm/fibo2/model.py`, `dinkster_inference/text_encoders/fibo2.py`, Fibo2 additions in `model_base.py`, `model_detection.py`, `sd.py`, and `supported_models.py` | kept upstream | Retains Fibo 2.0 diffusion, text encoding, detection, and loading through the package import rewrite; applies only the upstream additions to preserve the fork's model and loading seams |
 | `nodes.py`, `comfy_extras/nodes_fibo2.py` | omitted upstream | Fibo 2.0 application node registration and reference-conditioning nodes are ledger-only because the library does not ship the node application; the corresponding inference and text-encoder support is retained |
 | Upstream `README.md`, `comfy_api_nodes/apis/bfl.py`, `comfy_api_nodes/apis/bria.py`, `comfy_api_nodes/nodes_bfl.py`, `comfy_api_nodes/nodes_bria.py` | omitted upstream | The MOSS-image support announcement, FLUX 3 Max partner nodes, and FIBO 2.0 partner nodes are ledger-only; the fork retains its own README and does not ship API application nodes |
