@@ -15,7 +15,7 @@ gguf>=0.13.0
 aiohttp>=3.11.8
 yarl>=1.18.0
 pyyaml
-Pillow
+Pillow>=10.1.0
 scipy
 tqdm
 psutil
