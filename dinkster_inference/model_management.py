@@ -1750,6 +1750,14 @@ def get_offload_stream(device):
         return s
     return None
 
+def sync_all_offload_streams():
+    if NUM_STREAMS == 0:
+        synchronize()
+        return
+    for streams in get_model_manager().streams.values():
+        for stream in streams:
+            stream.synchronize()
+
 def sync_stream(device, stream):
     if stream is None or current_stream(device) is None:
         return
