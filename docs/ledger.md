@@ -1,7 +1,7 @@
 # Fork ledger
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`a071826fd36147da6a81e9e91257df9968a4b06b`.
+`503d785f0702428e2344248af9572a7270bb3253`.
 
 | File or subsystem | Tier | Reason |
 | --- | --- | --- |
@@ -31,6 +31,12 @@ Upstream fork point: `comfyanonymous/ComfyUI` commit
 | `QUANTIZATION.md` | changed by us | Rewrites source links to `dinkster_inference` and documents that masked SOL calls raise RuntimeError instead of falling back to PyTorch attention |
 | ComfyUI application and release workflows | changed by us | Removed because their server, API, frontend, packaging, and release targets are not part of this library |
 | ComfyUI application, server, API, execution, nodes, extras, middleware, assets, model directories, and application tests | changed by us | Removed because this repository distributes the inference library only |
+| `app/comfy_api_env.py`, `app/deploy_environment.py` (formerly `comfy/`), `tests-unit/deploy_environment_test.py` | changed by us | Retains both environment modules under `dinkster_inference/` and the existing library imports in deployment tests; no `app` package is shipped, and the upstream relocation changes no runtime behavior; the deployment location comment describes the library layout |
+| `comfy_api_nodes/util/_helpers.py`, `server.py`, `tests-unit/feature_flags_test.py` | omitted upstream | Environment import relocation is application-only; API helpers, the server and feature-flag application tests are not shipped |
+| `comfy_extras/nodes_fibo2.py` negative prompt handling | omitted upstream | Fibo2 T2I negative-prompt node handling is application-only; retains the corresponding Fibo2 NTK-aware RoPE library implementation |
+| `dinkster_inference/anonymous_file.py`, writable tensor backing in `memory_management.py`, `utils.py`, `ops.py`, `pinned_memory.py`, `model_prefetch.py`, `model_patcher.py`, `model_base.py`, `conds.py`, `samplers.py`, and QwenImage21/Wan cache models | kept upstream | Retains execution-scoped dynamic VRAM KV cache backing, admission, writeback and cleanup while preserving patch-program/training/window integration and manager-owned pin accounting; comfy-aimdo 0.6.0 was already pinned in requirements and wheel metadata |
+| `tests-unit/comfy_test/anonymous_file_test.py`, `qwen21_cache_admission_test.py`, `tensor_file_test.py`, `writable_weights_cuda.py` | kept upstream | Retains upstream backing-file, admission and writable-cache coverage through package import rewriting; spells the Unicode path fixture using ASCII escapes without changing the tested path |
+| `tests-unit/comfy_test/qwen21_cache_admission_test.py`, `model_management_test.py` fixtures | changed by us | Replaces the owning manager's pin eviction method in the admission test and declares the existing pin-reuse fixture non-writable; retains upstream admission expectations and the fork's copy-fencing assertions |
 | `comfy_extras/nodes_flux.py`, `comfy_extras/nodes_moss_image.py`, `comfy_extras/nodes_textgen.py` | omitted upstream | MOSS edit reference nodes and adaptive-tree text generation controls are application-only; retains their MOSS reference/LoRA and Qwen adaptive-tree library implementations |
 | `dinkster_inference/model_management.py` offload synchronization, `dinkster_inference/pinned_memory.py` pin reuse | changed by us | Synchronizes all offload streams before reusing a victim pin, iterating the owning ModelManager's streams instead of upstream global STREAMS; preserves manager-owned pin accounting |
 | `dinkster_inference/text_encoders/qwen35.py` deferred control metadata | kept upstream | Adaptive-tree preparation writes the current tree program and accepted slots before every copy, replacing fixed-chain initialization for Kitchen 0.2.40; both dependency files already pin that release, and aimdo remains 0.6.0 |
