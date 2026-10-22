@@ -38,9 +38,14 @@ class LinearKV(FixedKV):
 
     @staticmethod
     def deferred_tracker(device):
-        # ctl = {pending, parity}: replay the previous step's accepted prefix
+        # Replay accepted slots and evaluate the current tokens as a straight chain.
         n = comfy_kitchen.gated_delta_ctl_ints
+        slots = comfy_kitchen.gated_delta_slot_max
         host = torch.zeros((2, n), dtype=torch.int32)
+        rows = torch.arange(slots, dtype=torch.int32)
+        host[:, 2:2 + slots] = rows
+        host[:, 2 + slots:2 + 2 * slots] = rows - 1
+        host[:, 2 + 2 * slots:] = rows | 32  # commit each row before evaluating its successor
         # the host rows are pinned and fenced by events only where the copy is asynchronous
         cuda = torch.device(device).type == "cuda"
         return {"ctl": torch.zeros((n,), dtype=torch.int32, device=device), "host": host.pin_memory() if cuda else host,
