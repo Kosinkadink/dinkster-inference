@@ -1,7 +1,7 @@
 # Fork ledger
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`503d785f0702428e2344248af9572a7270bb3253`.
+`baa9c563c3c749ac85dead76bd09695684b2150b`.
 
 | File or subsystem | Tier | Reason |
 | --- | --- | --- |
@@ -37,6 +37,8 @@ Upstream fork point: `comfyanonymous/ComfyUI` commit
 | `dinkster_inference/anonymous_file.py`, writable tensor backing in `memory_management.py`, `utils.py`, `ops.py`, `pinned_memory.py`, `model_prefetch.py`, `model_patcher.py`, `model_base.py`, `conds.py`, `samplers.py`, and QwenImage21/Wan cache models | kept upstream | Retains execution-scoped dynamic VRAM KV cache backing, admission, writeback and cleanup while preserving patch-program/training/window integration and manager-owned pin accounting; comfy-aimdo 0.6.0 was already pinned in requirements and wheel metadata |
 | `tests-unit/comfy_test/anonymous_file_test.py`, `qwen21_cache_admission_test.py`, `tensor_file_test.py`, `writable_weights_cuda.py` | kept upstream | Retains upstream backing-file, admission and writable-cache coverage through package import rewriting; spells the Unicode path fixture using ASCII escapes without changing the tested path |
 | `tests-unit/comfy_test/qwen21_cache_admission_test.py`, `model_management_test.py` fixtures | changed by us | Replaces the owning manager's pin eviction method in the admission test and declares the existing pin-reuse fixture non-writable; retains upstream admission expectations and the fork's copy-fencing assertions |
+| `dinkster_inference/model_patcher.py` writable cache ownership, `tests-unit/comfy_test/test_patch_program.py` | changed by us | Registers writable cache patchers only for the active execution, outside the persistent patch program; preserves multigpu resource identity and training settings, excludes active caches from clones, and releases cache references on normal and exceptional exit |
+| `comfy_api_nodes/apis/bria.py`, `apis/ideogram.py`, `apis/meshy.py`, `nodes_bria.py`, `nodes_heygen.py`, `nodes_ideogram.py`, `nodes_meshy.py`, `nodes_pixverse.py` under `comfy_api_nodes/` | omitted upstream | Partner-node commits `dc0486a538d3ba09ab5f80581106a1c2bd02e2ba` (Meshy), `acf5a145b549906134ae3b448c72d9f6bf22c38b` (PixVerse), `ad0a80e0c9c9ba0fa5ec4fed443bb90e6d045a8b` (Bria), and `baa9c563c3c749ac85dead76bd09695684b2150b` (Ideogram) affect only the omitted API node application |
 | `comfy_extras/nodes_flux.py`, `comfy_extras/nodes_moss_image.py`, `comfy_extras/nodes_textgen.py` | omitted upstream | MOSS edit reference nodes and adaptive-tree text generation controls are application-only; retains their MOSS reference/LoRA and Qwen adaptive-tree library implementations |
 | `dinkster_inference/model_management.py` offload synchronization, `dinkster_inference/pinned_memory.py` pin reuse | changed by us | Synchronizes all offload streams before reusing a victim pin, iterating the owning ModelManager's streams instead of upstream global STREAMS; preserves manager-owned pin accounting |
 | `dinkster_inference/text_encoders/qwen35.py` deferred control metadata | kept upstream | Adaptive-tree preparation writes the current tree program and accepted slots before every copy, replacing fixed-chain initialization for Kitchen 0.2.40; both dependency files already pin that release, and aimdo remains 0.6.0 |

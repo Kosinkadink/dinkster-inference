@@ -445,6 +445,7 @@ class ModelPatcher:
         )
         self._materialized_insertions = []
         self._patch_scratch = {}
+        self._writable_model = None
         self.backup = {}
         self.backup_buffers = {}
         self.object_patches_backup = {}
@@ -1747,12 +1748,16 @@ class ModelPatcher:
         self.set_module_insertions(f"additional:{key}", ())
 
     def get_additional_models_with_key(self, key: str):
+        if key == "writable" and self._writable_model is not None:
+            return [self._writable_model]
         return list(self.additional_models.get(key, ()))
 
     def get_additional_models(self):
         all_models: list[ModelPatcher] = []
         for models in self.additional_models.values():
             all_models.extend(models)
+        if self._writable_model is not None:
+            all_models.append(self._writable_model)
         return all_models
 
     def get_nested_additional_models(self):
@@ -2236,7 +2241,8 @@ class ModelPatcherDynamic(ModelPatcher):
         try:
             model.load_state_dict(state, assign=True)
             patcher = ModelPatcherDynamic(model, self.load_device, torch.device("cpu"), fast_disk=self.fast_disk)
-            self.set_additional_models("writable", [patcher])
+            # Execution-owned cache tensors must not become persistent patch resources.
+            self._writable_model = patcher
             # Loading reverses this list; the writable model gets priority over its owner.
             dinkster_inference.model_management.load_models_gpu([patcher, self])
             patcher.set_in_use_by_current_prompt(True)
@@ -2248,7 +2254,7 @@ class ModelPatcherDynamic(ModelPatcher):
                 dinkster_inference.model_prefetch.cleanup_prefetch_queues()
                 dinkster_inference.model_prefetch.cleanup_malloc_graph()
                 if patcher is not None:
-                    self.remove_additional_models("writable")
+                    self._writable_model = None
                     vbar = model.dynamic_vbars.pop(patcher.load_device, None)
                     if vbar is not None:
                         vbar.close()
