@@ -212,7 +212,7 @@ def test_reused_pin_finishes_pending_copies_before_overwrite(monkeypatch, num_st
     stack = [(victim, 0)]
     buckets = {4: [entry]}
     recipient = SimpleNamespace(_pins={"weights": {"balancer_priority": 2}},
-                                _pin_state={"weights": (None, stack, [0], [4], [0], buckets)})
+                                _pin_state={"weights": (None, stack, [0], [4], [0], buckets), "writable": False})
 
     assert pinned_memory.pin_memory(recipient, size=4)
     recipient._pins["weights"]["pin"][:] = b"next"

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import contextlib
 import functools
+import gc
+import weakref
 from typing import Any, cast
 
+import comfy_aimdo.host_buffer
 import pytest
 import torch
 
+from dinkster_inference import model_management, model_prefetch, ops, utils
 from dinkster_inference.hooks import WeightHook
 from dinkster_inference.model_base import BaseModel
 from dinkster_inference.model_patcher import HookWeightPatch, LowVramPatch, ModelPatcher, ModelPatcherDynamic
@@ -528,6 +533,62 @@ def test_additional_models_use_clone_scoped_program_resources() -> None:
     child.remove_additional_models("control")
     assert child.get_additional_models_with_key("control") == []
     assert parent.get_additional_models_with_key("control") == [bound_auxiliary]
+
+
+@pytest.mark.parametrize("fail_sampling", [False, True])
+def test_writable_cache_does_not_change_or_outlive_patch_program(monkeypatch, fail_sampling) -> None:
+    monkeypatch.setattr(comfy_aimdo.host_buffer, "HostBuffer", lambda *_, **__: None)
+    owner = ModelPatcherDynamic(torch.nn.Linear(2, 2, bias=False), torch.device("cuda", 0), torch.device("cpu"))
+    owner.add_patches({"weight": ("diff", (torch.ones(2, 2),))})
+    owner.set_training_settings(enabled=True)
+    parent = _site_patcher()
+    parent.set_additional_models("multigpu", [owner])
+    owner = parent.get_additional_models_with_key("multigpu")[0]
+    descriptor = owner.patch_program_descriptor()
+    identity = owner.patches_uuid
+    caches, files = [], []
+    create_safetensors = utils.create_safetensors
+
+    def create_backing(state):
+        state, file = create_safetensors(state)
+        files.append(file)
+        return state, file
+
+    def load(models):
+        cache, model_owner = models
+        caches.append(weakref.ref(cache))
+        model_owner.model.weight_lowvram_function = LowVramPatch(
+            "weight", model_owner.patches, model_owner.patch_program.validate_resources
+        )
+
+    monkeypatch.setattr(utils, "create_safetensors", create_backing)
+    monkeypatch.setattr(model_management, "cuda_device_context", lambda _: contextlib.nullcontext())
+    monkeypatch.setattr(model_management, "load_models_gpu", load)
+    monkeypatch.setattr(model_management, "synchronize", lambda: None)
+    monkeypatch.setattr(model_prefetch, "cleanup_prefetch_queues", lambda: None)
+    monkeypatch.setattr(model_prefetch, "cleanup_malloc_graph", lambda: None)
+    monkeypatch.setattr(model_management, "unload_model_and_clones", lambda cache, **_: cache.partially_unload_ram(1e32))
+
+    try:
+        with owner.writable_model(ops.WritableWeight((17,), torch.uint8)):
+            parent.patch_program.validate_resources()
+            assert owner.patch_program_descriptor() == descriptor
+            assert owner.patches_uuid == identity
+            assert owner.patch_program.training_settings().enabled
+            assert len(owner.get_additional_models_with_key("writable")) == 1
+            assert owner.get_nested_additional_models() == owner.get_additional_models_with_key("writable")
+            assert owner.clone().get_additional_models_with_key("writable") == []
+            if fail_sampling:
+                raise RuntimeError("sampling failed")
+    except RuntimeError as error:
+        assert fail_sampling and str(error) == "sampling failed"
+
+    gc.collect()
+    assert owner.get_additional_models() == []
+    assert all(file.closed for file in files)
+    assert all(cache() is None for cache in caches)
+    torch.testing.assert_close(owner.model.weight_lowvram_function(torch.zeros(2, 2)), torch.ones(2, 2))
+    parent.patch_program.validate_resources()
 
 
 def test_module_insertion_revalidates_resources_before_materialization() -> None:
