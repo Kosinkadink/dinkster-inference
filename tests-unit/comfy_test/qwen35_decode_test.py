@@ -216,12 +216,13 @@ def test_deferred_ctl_rows_wait_for_their_previous_copy(monkeypatch):
     tracker = LinearKV.deferred_tracker("cpu")
     tracker["copied"] = [Event(0), Event(1)]
     ctl = tracker["ctl"]
-    assert ctl.shape == (2,)  # {pending, parity}
+    assert ctl.shape == (26,)  # {pending, parity, slots, parents, program}
     layers = [LinearKV(torch.zeros(1), torch.zeros(1), 0, None, None, ctl=ctl, ctl_tracker=tracker) for _ in range(2)]
 
     def step(n, discard=0):
         for kv in layers:
             kv.prepare(n)
+        assert ctl[2:].tolist() == [0, 1, 2, 3, 4, 5, 6, 7, -1, 0, 1, 2, 3, 4, 5, 6, 32, 33, 34, 35, 36, 37, 38, 39]
         for kv in layers:
             kv.advance(n)
             if discard:
