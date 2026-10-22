@@ -87,6 +87,8 @@ class Gemma4_31B_Config(Gemma4Config):
     num_hidden_layers: int = 60
     num_attention_heads: int = 32
     num_key_value_heads: int = 16
+    num_global_key_value_heads = 4
+    attention_k_eq_v = True
     vision_bidirectional = True
     sliding_attention = [1024, 1024, 1024, 1024, 1024, False]
     hidden_size_per_layer_input: int = 0
@@ -910,7 +912,7 @@ class Gemma4PatchEmbedder(nn.Module):
 
     def forward(self, patches, pixel_position_ids):
         """
-        patches: [B, num_patches, 3*patch_size²] in [0,1] range (normalized to [-1,1] inside, matching HF)
+        patches: [B, num_patches, 3*patch_size**2] in [0,1] range (normalized to [-1,1] inside, matching HF)
         pixel_position_ids: [B, num_patches, 2] with (x,y) positions, (-1,-1) for padding
         """
         hidden_states = self.input_proj((2.0 * (patches - 0.5)).to(self.input_proj.weight.dtype))
@@ -952,7 +954,7 @@ class Gemma4VisionEncoder(nn.Module):
     def forward(self, pixel_values, max_soft_tokens=None):
         """
         pixel_values: [B, C, H, W] in [0,1] range
-        max_soft_tokens: if provided, pad to max_soft_tokens * k² total patches
+        max_soft_tokens: if provided, pad to max_soft_tokens * k**2 total patches
         """
         batch_size, _, height, width = pixel_values.shape
         ps = self.patch_size
@@ -1008,7 +1010,7 @@ class Gemma4VisionEncoder(nn.Module):
 
 
 class Gemma4RMSNormProjector(nn.Module):
-    """Shared projector: parameterless RMSNorm → linear. Used for both vision and audio."""
+    """Shared projector: parameterless RMSNorm -> linear. Used for both vision and audio."""
     def __init__(self, in_dim, out_dim, dtype=None, device=None, ops=None):
         super().__init__()
         self.embedding_projection = ops.Linear(in_dim, out_dim, bias=False, device=device, dtype=dtype)
@@ -1440,7 +1442,7 @@ class Gemma4_Tokenizer():
         audio = np.pad(audio, (160, 0))
         mask_raw = np.pad(mask_raw, (160, 0))
 
-        # Extract 321-sample frames via stride tricks, drop last → 320
+        # Extract 321-sample frames via stride tricks, drop last -> 320
         nf = (len(audio) - 321) // 160 + 1
         strides = (audio.strides[0] * 160, audio.strides[0])
         frames = np.lib.stride_tricks.as_strided(audio, (nf, 321), strides)[..., :-1].copy()

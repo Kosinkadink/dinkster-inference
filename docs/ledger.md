@@ -1,7 +1,7 @@
 # Fork ledger
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`7a28332047b6af638dc6c7f72ef3481a718769fd`.
+`1a82e6d01f395b43275c77acd289af1eb7090bb9`.
 
 | File or subsystem | Tier | Reason |
 | --- | --- | --- |
@@ -25,12 +25,15 @@ Upstream fork point: `comfyanonymous/ComfyUI` commit
 | `dinkster_inference/ldm/sam3d_body/model/model.py` | changed by us | Imports the relocated face landmarker from the library |
 | `tests-unit/comfy_test/`, `tests-unit/comfy_quant/`, `tests-unit/deploy_environment_test.py` | changed by us | Retains pure-library tests and rewrites their package imports |
 | `pyproject.toml` | ours only | Builds distribution `dinkster-inference` at version 0.1.0, discovers `dinkster_inference`, and declares runtime dependencies; the upstream 0.42.0 package version bump is ledger-only |
-| `requirements.txt` | changed by us | Tracks workflow templates 0.11.93 while retaining frontend 1.53.10 and embedded docs 0.5.14; the upstream frontend 1.57.1 bump is ledger-only because the frontend application is not shipped or declared as a wheel dependency; keeps comfy-kitchen synchronized with wheel metadata |
+| `requirements.txt` | changed by us | Tracks workflow templates 0.11.94 while retaining frontend 1.53.10 and embedded docs 0.5.14; the upstream frontend 1.57.1 bump is ledger-only because the frontend application is not shipped or declared as a wheel dependency; keeps comfy-kitchen synchronized with wheel metadata |
 | `tools/rewrite_upstream_imports.py` | ours only | Applies the required package import rewrite after upstream cherry-picks |
 | `.github/workflows/ci.yml` | ours only | Builds and installs the wheel, verifies standalone imports, and runs the retained library tests |
 | `QUANTIZATION.md` | changed by us | Rewrites source links to `dinkster_inference` and documents that masked SOL calls raise RuntimeError instead of falling back to PyTorch attention |
 | ComfyUI application and release workflows | changed by us | Removed because their server, API, frontend, packaging, and release targets are not part of this library |
 | ComfyUI application, server, API, execution, nodes, extras, middleware, assets, model directories, and application tests | changed by us | Removed because this repository distributes the inference library only |
+| `comfy_api_nodes/apis/krea.py`, `comfy_api_nodes/apis/mirelo.py`, `comfy_api_nodes/apis/veed.py`, `comfy_api_nodes/nodes_bria.py`, `comfy_api_nodes/nodes_heygen.py`, `comfy_api_nodes/nodes_krea.py`, `comfy_api_nodes/nodes_mirelo.py`, `comfy_api_nodes/nodes_veed.py`, `comfy_api_nodes/util/__init__.py`, `comfy_api_nodes/util/conversions.py` | omitted upstream | HeyGen pricing, Krea thinking mode, Mirelo and VEED partner nodes, and their Bria/shared utilities are application-only; API nodes are not shipped |
+| Upstream `AGENTS.md` model integration and V3 node guidance | omitted upstream | Retains the fork's existing engineering guidance; upstream loader, model-packaging and application-node policy is not an inference-library change |
+| `dinkster_inference/text_encoders/gemma4.py` Gemma4 31B global attention | kept upstream | Retains four global KV heads and shared key/value projection through the package import rewrite |
 | `app/agent_host.py`, `agent_requirements.txt`, `main.py`, `server.py`, `tests-unit/app_test/agent_host_test.py`, upstream `comfy/cli_args.py` agent flag | omitted upstream | The optional local agent host, comfy-agent dependency, startup/server integration and host tests are application-only; omits `--enable-agent` from `dinkster_inference/cli_args.py` because no shipped host consumes it |
 | `comfy_extras/nodes_images.py`, `tests-unit/comfy_extras_test/pad_image_test.py` | omitted upstream | Mirror padding and pad-to-multiple image nodes and their application tests are ledger-only because image-node applications are not shipped |
 | `dinkster_inference/ldm/fibo2/model.py`, `dinkster_inference/text_encoders/fibo2.py`, Fibo2 additions in `model_base.py`, `model_detection.py`, `sd.py`, and `supported_models.py` | kept upstream | Retains Fibo 2.0 diffusion, text encoding, detection, and loading through the package import rewrite; applies only the upstream additions to preserve the fork's model and loading seams |
