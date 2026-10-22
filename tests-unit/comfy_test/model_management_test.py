@@ -1,8 +1,10 @@
+from types import SimpleNamespace
 from unittest.mock import Mock, call
 
 import pytest
 
 import dinkster_inference.model_management as model_management
+import dinkster_inference.pinned_memory as pinned_memory
 
 
 class NPUDevice:
@@ -184,3 +186,36 @@ def test_replacing_manager_preserves_process_pin_policy(monkeypatch):
 
     assert model_management.get_model_manager() is replacement
     assert replacement.max_pinned_memory == 123
+
+
+@pytest.mark.parametrize("num_streams", [0, 2])
+def test_reused_pin_finishes_pending_copies_before_overwrite(monkeypatch, num_streams):
+    source = bytearray(b"data")
+    copied = []
+
+    class PendingStream:
+        def synchronize(self):
+            copied.append(bytes(source))
+
+    manager = model_management.ModelManager()
+    manager.streams = {"cuda": [PendingStream(), PendingStream()], "npu": [PendingStream()]}
+    monkeypatch.setattr(model_management, "_model_manager", manager)
+    monkeypatch.setattr(model_management, "NUM_STREAMS", num_streams)
+    monkeypatch.setattr(model_management, "synchronize", PendingStream().synchronize)
+    monkeypatch.setattr(model_management, "DISABLE_PINNED_MEMORY", False)
+    monkeypatch.setattr(model_management, "ensure_pin_budget", lambda *args, **kwargs: False)
+    monkeypatch.setattr(pinned_memory.dinkster_inference.memory_management, "extra_ram_release", lambda *args: None)
+
+    victim = SimpleNamespace(_pins={"weights": {"pin": source, "registered": True, "stack_index": 0}})
+    entry = [-1, 0, victim]
+    victim._pins["weights"]["balancer_entry"] = entry
+    stack = [(victim, 0)]
+    buckets = {4: [entry]}
+    recipient = SimpleNamespace(_pins={"weights": {"balancer_priority": 2}},
+                                _pin_state={"weights": (None, stack, [0], [4], [0], buckets)})
+
+    assert pinned_memory.pin_memory(recipient, size=4)
+    recipient._pins["weights"]["pin"][:] = b"next"
+
+    assert copied == [b"data"] * (3 if num_streams else 1)
+    assert source == b"next"

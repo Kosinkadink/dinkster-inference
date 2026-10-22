@@ -1,7 +1,7 @@
 # Fork ledger
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`1a82e6d01f395b43275c77acd289af1eb7090bb9`.
+`a071826fd36147da6a81e9e91257df9968a4b06b`.
 
 | File or subsystem | Tier | Reason |
 | --- | --- | --- |
@@ -31,6 +31,9 @@ Upstream fork point: `comfyanonymous/ComfyUI` commit
 | `QUANTIZATION.md` | changed by us | Rewrites source links to `dinkster_inference` and documents that masked SOL calls raise RuntimeError instead of falling back to PyTorch attention |
 | ComfyUI application and release workflows | changed by us | Removed because their server, API, frontend, packaging, and release targets are not part of this library |
 | ComfyUI application, server, API, execution, nodes, extras, middleware, assets, model directories, and application tests | changed by us | Removed because this repository distributes the inference library only |
+| `comfy_extras/nodes_flux.py`, `comfy_extras/nodes_moss_image.py`, `comfy_extras/nodes_textgen.py` | omitted upstream | MOSS edit reference nodes and adaptive-tree text generation controls are application-only; retains their MOSS reference/LoRA and Qwen adaptive-tree library implementations |
+| `dinkster_inference/model_management.py` offload synchronization, `dinkster_inference/pinned_memory.py` pin reuse | changed by us | Synchronizes all offload streams before reusing a victim pin, iterating the owning ModelManager's streams instead of upstream global STREAMS; preserves manager-owned pin accounting |
+| `dinkster_inference/text_encoders/qwen35.py` deferred control metadata | kept upstream | Adaptive-tree preparation writes the current tree program and accepted slots before every copy, replacing fixed-chain initialization for Kitchen 0.2.40; both dependency files already pin that release, and aimdo remains 0.6.0 |
 | `comfy_api_nodes/apis/krea.py`, `comfy_api_nodes/apis/mirelo.py`, `comfy_api_nodes/apis/veed.py`, `comfy_api_nodes/nodes_bria.py`, `comfy_api_nodes/nodes_heygen.py`, `comfy_api_nodes/nodes_krea.py`, `comfy_api_nodes/nodes_mirelo.py`, `comfy_api_nodes/nodes_veed.py`, `comfy_api_nodes/util/__init__.py`, `comfy_api_nodes/util/conversions.py` | omitted upstream | HeyGen pricing, Krea thinking mode, Mirelo and VEED partner nodes, and their Bria/shared utilities are application-only; API nodes are not shipped |
 | Upstream `AGENTS.md` model integration and V3 node guidance | omitted upstream | Retains the fork's existing engineering guidance; upstream loader, model-packaging and application-node policy is not an inference-library change |
 | `dinkster_inference/text_encoders/gemma4.py` Gemma4 31B global attention | kept upstream | Retains four global KV heads and shared key/value projection through the package import rewrite |
