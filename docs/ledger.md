@@ -1,7 +1,7 @@
 # Fork ledger
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`baa9c563c3c749ac85dead76bd09695684b2150b`.
+`6cbc3862d5c3ceffa9e31ea38b3fe66681bbd6ab`.
 
 | File or subsystem | Tier | Reason |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ Upstream fork point: `comfyanonymous/ComfyUI` commit
 | `dinkster_inference/ldm/sam3d_body/model/model.py` | changed by us | Imports the relocated face landmarker from the library |
 | `tests-unit/comfy_test/`, `tests-unit/comfy_quant/`, `tests-unit/deploy_environment_test.py` | changed by us | Retains pure-library tests and rewrites their package imports |
 | `pyproject.toml` | ours only | Builds distribution `dinkster-inference` at version 0.1.0, discovers `dinkster_inference`, and declares runtime dependencies; the upstream 0.42.0 package version bump is ledger-only |
-| `requirements.txt` | changed by us | Tracks workflow templates 0.11.94 while retaining frontend 1.53.10 and embedded docs 0.5.14; the upstream frontend 1.57.1 bump is ledger-only because the frontend application is not shipped or declared as a wheel dependency; keeps comfy-kitchen synchronized with wheel metadata |
+| `requirements.txt` | changed by us | Tracks upstream workflow templates 0.11.96 in the requirements environment without adding application packages to wheel metadata; retains frontend 1.53.10 and embedded docs 0.5.14; the upstream frontend 1.57.1 bump is ledger-only because the frontend application is not shipped or declared as a wheel dependency; keeps comfy-kitchen synchronized with wheel metadata |
 | `tools/rewrite_upstream_imports.py` | ours only | Applies the required package import rewrite after upstream cherry-picks |
 | `.github/workflows/ci.yml` | ours only | Builds and installs the wheel, verifies standalone imports, and runs the retained library tests |
 | `QUANTIZATION.md` | changed by us | Rewrites source links to `dinkster_inference` and documents that masked SOL calls raise RuntimeError instead of falling back to PyTorch attention |
