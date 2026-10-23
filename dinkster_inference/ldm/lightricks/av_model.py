@@ -38,7 +38,7 @@ class CompressedTimestep:
         elif patches_per_frame is not None and n >= patches_per_frame and n % patches_per_frame == 0:
             self.patches_per_frame = patches_per_frame
             self.num_frames = n // patches_per_frame
-            # All patches in a frame are identical — keep only the first.
+            # All patches in a frame are identical \u2014 keep only the first.
             self.data = tensor.view(self.batch_size, self.num_frames, patches_per_frame, self.feature_dim)[:, :, 0, :].contiguous()
         else:
             self.patches_per_frame = 1

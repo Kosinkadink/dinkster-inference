@@ -139,7 +139,7 @@ class PointCrossAttention(nn.Module):
         assert sharpedge_pc.shape[1] <= self.pc_sharpedge_size, "Sharpedge surface points size must be less than or equal to pc_sharpedge_size"
 
         input_random_pc_size = int(num_random_query * self.downsample_ratio)
-        random_query_pc, random_input_pc, random_idx_pc, random_idx_query = \
+        random_query_pc, random_input_pc, random_idx_pc, random_idx_query =\
             self.subsample(pc = random_pc, num_query = num_random_query, input_pc_size = input_random_pc_size)
 
         input_sharpedge_pc_size = int(num_sharpedge_query * self.downsample_ratio)
@@ -149,7 +149,7 @@ class PointCrossAttention(nn.Module):
             sharpedge_query_pc = torch.zeros(B, 0, D, dtype= random_query_pc.dtype).to(point_cloud.device)
 
         else:
-            sharpedge_query_pc, sharpedge_input_pc, sharpedge_idx_pc, sharpedge_idx_query = \
+            sharpedge_query_pc, sharpedge_input_pc, sharpedge_idx_pc, sharpedge_idx_query =\
             self.subsample(pc = sharpedge_pc, num_query = num_sharpedge_query, input_pc_size = input_sharpedge_pc_size)
 
         # concat the random and sharpedges
@@ -162,7 +162,7 @@ class PointCrossAttention(nn.Module):
         if self.point_feats > 0:
             random_surface_features, sharpedge_surface_features = torch.split(features, [self.pc_size, self.pc_sharpedge_size], dim = 1)
 
-            input_random_surface_features, query_random_features = \
+            input_random_surface_features, query_random_features =\
                 self.handle_features(features = random_surface_features, idx_pc = random_idx_pc, batch_size = B,
                                      input_pc_size = input_random_pc_size, idx_query = random_idx_query)
 
@@ -174,7 +174,7 @@ class PointCrossAttention(nn.Module):
                                                        dtype = query_random_features.dtype, device = point_cloud.device)
             else:
 
-                input_sharpedge_surface_features, query_sharpedge_features = \
+                input_sharpedge_surface_features, query_sharpedge_features =\
                     self.handle_features(idx_pc = sharpedge_idx_pc, features = sharpedge_surface_features,
                                          batch_size = B, idx_query = sharpedge_idx_query, input_pc_size = input_sharpedge_pc_size)
 

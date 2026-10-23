@@ -146,12 +146,11 @@ def cast_modules_with_vbar(comfy_modules, dtype, device, bias_dtype, non_blockin
     cast_buffer = None
     cast_buffer_offset = 0
     if return_faulted:
-        fully_faulted = all(not any(not hasattr(f, "active") or f.active() for f in getattr(s, param_key + "_function", [])) for s in comfy_modules for param_key in ("weight", "bias"))
+        fully_faulted = all(not getattr(s, param_key + "_function", []) for s in comfy_modules for param_key in ("weight", "bias"))
 
     def ensure_offload_stream(module, required_size, check_largest):
         nonlocal offload_stream
         nonlocal cast_buffer
-        manager = dinkster_inference.model_management.get_model_manager()
 
         if offload_stream is None:
             offload_stream = dinkster_inference.model_management.get_offload_stream(device)
@@ -159,11 +158,11 @@ def cast_modules_with_vbar(comfy_modules, dtype, device, bias_dtype, non_blockin
             return
 
         current_size = 0 if cast_buffer is None else cast_buffer.size()
-        if current_size < required_size and module is manager.largest_aimdo_casted_weight[0]:
+        if current_size < required_size and module is dinkster_inference.model_management.LARGEST_AIMDO_CASTED_WEIGHT[0]:
             offload_stream = dinkster_inference.model_management.get_offload_stream(device)
             cast_buffer = None
-        if required_size > manager.largest_aimdo_casted_weight[1]:
-            manager.largest_aimdo_casted_weight = (module, required_size)
+        if required_size > dinkster_inference.model_management.LARGEST_AIMDO_CASTED_WEIGHT[1]:
+            dinkster_inference.model_management.LARGEST_AIMDO_CASTED_WEIGHT = (module, required_size)
 
     def get_cast_buffer(buffer_size):
         nonlocal offload_stream
@@ -316,7 +315,7 @@ def resolve_cast_module_with_vbar(s, dtype, device, bias_dtype, compute_dtype, w
 
     def post_cast(s, param_key, x, dtype, resident, update_weight):
         lowvram_fn = getattr(s, param_key + "_lowvram_function", None)
-        fns = [f for f in getattr(s, param_key + "_function", []) if not hasattr(f, "active") or f.active()]
+        fns = getattr(s, param_key + "_function", [])
 
         if x is None:
             return None
@@ -435,10 +434,8 @@ def cast_bias_weight(s, input=None, dtype=None, device=None, bias_dtype=None, of
         weight = params[0]
         bias = params[1]
 
-    weight_functions = [f for f in s.weight_function if not hasattr(f, "active") or f.active()]
-    bias_functions = [f for f in s.bias_function if not hasattr(f, "active") or f.active()]
-    weight_has_function = len(weight_functions) > 0
-    bias_has_function = len(bias_functions) > 0
+    weight_has_function = len(s.weight_function) > 0
+    bias_has_function = len(s.bias_function) > 0
 
     weight = dinkster_inference.model_management.cast_to(s.weight, None, device, non_blocking=non_blocking, copy=weight_has_function, stream=offload_stream, r=weight)
 
@@ -452,14 +449,14 @@ def cast_bias_weight(s, input=None, dtype=None, device=None, bias_dtype=None, of
 
     if s.bias is not None:
         bias = bias.to(dtype=bias_dtype)
-        for f in bias_functions:
+        for f in s.bias_function:
             bias = f(bias)
 
     if weight_has_function or weight.dtype != dtype:
         weight = weight.to(dtype=dtype)
         if isinstance(weight, QuantizedTensor):
             weight = weight.dequantize()
-        for f in weight_functions:
+        for f in s.weight_function:
             weight = f(weight)
 
     return format_return((weight, bias, (offload_stream, weight_a, bias_a)), offloadable)
@@ -1177,11 +1174,11 @@ class QuantLinearFunc(torch.autograd.Function):
         ctx.fp8_bwd = dinkster_inference.model_management.training_fp8_bwd
 
         if ctx.fp8_bwd:
-            # Cache FP8 quantized input - half the memory of bf16
+            # Cache FP8 quantized input \u2014 half the memory of bf16
             if isinstance(q_input, QuantizedTensor) and layout_type.startswith('TensorCoreFP8'):
                 ctx.q_input = q_input  # already FP8, reuse
             else:
-                # NVFP4 or other layout - quantize input to FP8 for backward
+                # NVFP4 or other layout \u2014 quantize input to FP8 for backward
                 ctx.q_input = QuantizedTensor.from_float(inp, "TensorCoreFP8E4M3Layout")
             ctx.save_for_backward(weight)
         else:
@@ -1196,10 +1193,10 @@ class QuantLinearFunc(torch.autograd.Function):
         compute_dtype = ctx.compute_dtype
         grad_2d = grad_output.flatten(0, -2).to(compute_dtype)
 
-        # Value casting - only difference between fp8 and non-fp8 paths
+        # Value casting \u2014 only difference between fp8 and non-fp8 paths
         if ctx.fp8_bwd:
             weight, = ctx.saved_tensors
-            # Wrap as FP8 QuantizedTensors so torch.mm dispatches to _scaled_mm
+            # Wrap as FP8 QuantizedTensors \u2192 torch.mm dispatches to _scaled_mm
             grad_mm = QuantizedTensor.from_float(grad_2d, "TensorCoreFP8E5M2Layout")
             if isinstance(weight, QuantizedTensor) and weight._layout_cls.startswith("TensorCoreFP8"):
                 weight_mm = weight
@@ -1210,7 +1207,7 @@ class QuantLinearFunc(torch.autograd.Function):
             input_mm = ctx.q_input
         else:
             input_float, weight = ctx.saved_tensors
-            # Standard tensors use regular torch.mm matmul
+            # Standard tensors \u2192 torch.mm does regular matmul
             grad_mm = grad_2d
             if isinstance(weight, QuantizedTensor):
                 weight_mm = weight.dequantize().to(compute_dtype)
@@ -1218,7 +1215,7 @@ class QuantLinearFunc(torch.autograd.Function):
                 weight_mm = weight.to(compute_dtype)
             input_mm = input_float.flatten(0, -2).to(compute_dtype) if ctx.weight_requires_grad else None
 
-        # Computation is the same for both paths; dispatch handles the rest
+        # Computation \u2014 same for both paths, dispatch handles the rest
         grad_input = torch.mm(grad_mm, weight_mm)
         if len(ctx.input_shape) > 2:
             grad_input = grad_input.unflatten(0, ctx.input_shape[:-1])
@@ -1613,22 +1610,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
                 return _quantized_apply(self, fn, recurse)
 
         class MoEExperts(torch.nn.Module, MixedPrecisionOp):
-            """Container for E quantized expert weights, indexed via expert_weight(i).
-
-            The bank lives on self.weight as a single 3D tensor - either a
-            compute_dtype Parameter or a Parameter wrapping a QuantizedTensor
-            with leading expert dim.
-
-            State-dict layout matches mixed_precision_ops.Linear with a leading
-            expert dim:
-                {prefix}.weight          quant data (storage_t), leading dim = E
-                {prefix}.weight_scale    block / per-tensor scale
-                {prefix}.weight_scale_2  [E] or scalar           NVFP4 only
-                {prefix}.bias            [E, out_features]       optional, compute_dtype
-                {prefix}.comfy_quant     json -> {{"format": "...", "num_experts": E}}
-
-            Without comfy_quant the weight loads as a plain compute_dtype 3D Parameter [E, out, in].
-            """
+            'Container for E quantized expert weights, indexed via expert_weight(i).\n\n            The bank lives on self.weight as a single 3D tensor \u2014 either a\n            compute_dtype Parameter or a Parameter wrapping a QuantizedTensor\n            with leading expert dim.\n\n            State-dict layout matches mixed_precision_ops.Linear with a leading\n            expert dim:\n                {prefix}.weight          quant data (storage_t), leading dim = E\n                {prefix}.weight_scale    block / per-tensor scale\n                {prefix}.weight_scale_2  [E] or scalar           NVFP4 only\n                {prefix}.bias            [E, out_features]       optional, compute_dtype\n                {prefix}.comfy_quant     json -> {{"format": "...", "num_experts": E}}\n\n            Without comfy_quant the weight loads as a plain compute_dtype 3D Parameter [E, out, in].\n            '
 
             _disabled_formats = disabled
 
@@ -1702,9 +1684,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
 
             @contextlib.contextmanager
             def bank_resident(self, input):
-                """Cast the whole bank once; expert_linear inside reuses the cast.
-                Not re-entrant - do not nest calls on the same instance.
-                """
+                'Cast the whole bank once; expert_linear inside reuses the cast.\n                Not re-entrant \u2014 do not nest calls on the same instance.\n                '
                 with self._cast_bank(input) as (weight, bias):
                     if self._full_precision_mm and isinstance(weight, QuantizedTensor) and weight._qdata.ndim == 2:  # flat per-row banks; 3-D banks dequantize per expert
                         weight = self._dequantize_bank(weight, input.dtype)
@@ -1809,7 +1789,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
                         QuantizedTensor(weight.to(dtype=qconfig["storage_t"]), qconfig["comfy_tensor_layout"], params),
                         requires_grad=False)
                 elif layer_conf is not None:
-                    # Unsupported format - restore the marker so it round-trips; fall through to default load.
+                    # Unsupported format \u2014 restore the marker so it round-trips; fall through to default load.
                     state_dict[f"{prefix}comfy_quant"] = torch.tensor(
                         list(json.dumps(layer_conf).encode('utf-8')), dtype=torch.uint8)
 

@@ -241,8 +241,9 @@ class CustomLiteLAProcessor2_0:
         key = key.transpose(-1, -2).reshape(batch_size, attn.heads, head_dim, -1).transpose(-1, -2)
         value = value.transpose(-1, -2).reshape(batch_size, attn.heads, head_dim, -1)
 
-        # RoPE expects [B, H, S, D], while query is currently [B, H, D, S].
-        query = query.permute(0, 1, 3, 2)  # [B, H, S, D]
+        # RoPE\u9700\u8981 [B, H, S, D] \u8f93\u5165
+        # \u6b64\u65f6 query\u662f [B, H, D, S], \u9700\u8981\u8f6c\u6210 [B, H, S, D] \u624d\u80fd\u5e94\u7528RoPE
+        query = query.permute(0, 1, 3, 2)  # [B, H, S, D]  (\u4ece [B, H, D, S])
 
         # Apply query and key normalization if needed
         if attn.norm_q is not None:
@@ -258,7 +259,7 @@ class CustomLiteLAProcessor2_0:
             elif rotary_freqs_cis_cross is not None and has_encoder_hidden_state_proj:
                 key = self.apply_rotary_emb(key, rotary_freqs_cis_cross)
 
-        # Restore query to [B, H, D, S].
+        # \u6b64\u65f6 query\u662f [B, H, S, D]\uff0c\u9700\u8981\u8fd8\u539f\u6210 [B, H, D, S]
         query = query.permute(0, 1, 3, 2)  # [B, H, D, S]
 
         if attention_mask is not None:
@@ -266,12 +267,12 @@ class CustomLiteLAProcessor2_0:
             attention_mask = attention_mask[:, None, :, None].to(key.dtype)  # [B, 1, S, 1]
             query = query * attention_mask.permute(0, 1, 3, 2)  # [B, H, S, D] * [B, 1, S, 1]
             if not attn.is_cross_attention:
-                key = key * attention_mask  # [B, h, S, D] * [B, 1, S, 1]
-                value = value * attention_mask.permute(0, 1, 3, 2)  # Match the S dimension of [B, h, D, S].
+                key = key * attention_mask  # key: [B, h, S, D] \u4e0e mask [B, 1, S, 1] \u76f8\u4e58
+                value = value * attention_mask.permute(0, 1, 3, 2)  # \u5982\u679c value \u662f [B, h, D, S]\uff0c\u90a3\u4e48\u9700\u8c03\u6574mask\u4ee5\u5339\u914dS\u7ef4\u5ea6
 
         if attn.is_cross_attention and encoder_attention_mask is not None and has_encoder_hidden_state_proj:
             encoder_attention_mask = encoder_attention_mask[:, None, :, None].to(key.dtype)  # [B, 1, S_enc, 1]
-            # key: [B, h, S_enc, D], value: [B, h, D, S_enc]
+            # \u6b64\u65f6 key: [B, h, S_enc, D], value: [B, h, D, S_enc]
             key = key * encoder_attention_mask  # [B, h, S_enc, D] * [B, 1, S_enc, 1]
             value = value * encoder_attention_mask.permute(0, 1, 3, 2)  # [B, h, D, S_enc] * [B, 1, 1, S_enc]
 
@@ -423,7 +424,7 @@ class CustomerAttnProcessor2_0:
         if attn.is_cross_attention and encoder_attention_mask is not None and has_encoder_hidden_state_proj:
             # attention_mask: N x S1
             # encoder_attention_mask: N x S2
-            # Cross attention combines attention_mask and encoder_attention_mask.
+            # cross attention \u6574\u5408attention_mask\u548cencoder_attention_mask
             combined_mask = attention_mask[:, :, None] * encoder_attention_mask[:, None, :]
             attention_mask = torch.where(combined_mask == 1, 0.0, -torch.inf)
             attention_mask = attention_mask[:, None, :, :].expand(-1, attn.heads, -1, -1).to(query.dtype)

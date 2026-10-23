@@ -339,7 +339,7 @@ class VarLenTensor:
             layout=self.layout,
         )
         # Shallow-copy so derived tensors don't share-by-reference the cache
-        # dict — see SparseTensor.replace for rationale.
+        # dict \u2014 see SparseTensor.replace for rationale.
         new_tensor._cache = dict(self._cache)
         return new_tensor
 
@@ -883,7 +883,7 @@ def flexible_dual_grid_to_mesh(
 ):
 
     device = coords.device
-    # Small constant index tables — built per call (stateless), not cached on the function.
+    # Small constant index tables \u2014 built per call (stateless), not cached on the function.
     edge_neighbor_voxel_offset = torch.tensor([
         [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]],     # x-axis
         [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],     # y-axis
@@ -914,7 +914,7 @@ def flexible_dual_grid_to_mesh(
     values = torch.arange(N, dtype=torch.int32, device=device)
     torch_hashmap = TorchHashMap(flat_keys, values)
 
-    # Find connected voxels — direct gather instead of materializing the full [N, 3, 4, 3]
+    # Find connected voxels \u2014 direct gather instead of materializing the full [N, 3, 4, 3]
     n_idx, axis_idx = intersected_flag.nonzero(as_tuple=True)                          # (M,), (M,)
     offsets_per_axis = edge_neighbor_voxel_offset[0]        # (3, 4, 3)
     connected_voxel = coords[n_idx].unsqueeze(1) + offsets_per_axis[axis_idx]          # (M, 4, 3)
@@ -930,7 +930,7 @@ def flexible_dual_grid_to_mesh(
     connected_voxel_valid = (conn_indices >= 0).all(dim=1)   # -1 = missing neighbor
     quad_indices = conn_indices[connected_voxel_valid].int()                             # (L, 4)
 
-    # Chain in-place — each op in the original allocated a fresh N*3 fp32 tensor.
+    # Chain in-place \u2014 each op in the original allocated a fresh N*3 fp32 tensor.
     mesh_vertices = coords.float()
     mesh_vertices.add_(dual_vertices).mul_(voxel_size).add_(aabb[0].reshape(1, 3))
     if split_weight is None:
@@ -1053,9 +1053,7 @@ class SparseStructureDecoder(nn.Module):
 
 
 class ShapeVae(nn.Module):
-    """Decoder bundle from the Trellis2 shape checkpoint: structure decoder
-    (32^3 SS latent → 64^3 dense occupancy) and shape decoder (sparse latent →
-    mesh + per-stage subdivisions)."""
+    'Decoder bundle from the Trellis2 shape checkpoint: structure decoder\n    (32^3 SS latent \u2192 64^3 dense occupancy) and shape decoder (sparse latent \u2192\n    mesh + per-stage subdivisions).'
 
     def __init__(self):
         super().__init__()

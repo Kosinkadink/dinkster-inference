@@ -10,7 +10,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = [
-  "torch>=2.5",
+  "torch",
   "torchsde",
   "torchvision",
   "numpy>=1.25.0",
@@ -18,12 +18,11 @@ dependencies = [
   "transformers>=4.50.3",
   "tokenizers>=0.13.3",
   "sentencepiece",
-  "protobuf",
   "safetensors>=0.4.2",
   "aiohttp>=3.11.8",
   "yarl>=1.18.0",
   "PyYAML",
-  "Pillow",
+  "Pillow>=10.1.0",
   "scipy",
   "tqdm",
   "psutil",
@@ -40,17 +39,19 @@ dependencies = [
   "pydantic-settings~=2.0",
   "PyOpenGL>=3.1.8",
   "comfy-angle",
-  "gguf>=0.13.0",
 ]
 
 [project.urls]
 repository = "https://github.com/Kosinkadink/dinkster-inference"
 
+[tool.setuptools]
+py-modules = ["node_helpers"]
+
 [tool.setuptools.packages.find]
-include = ["dinkster_inference*"]
+include = ["dinkster_inference*", "comfy"]
 
 [tool.setuptools.package-data]
-dinkster_inference = ["**/*.json", "**/*.model", "**/*.txt"]
+dinkster_inference = ["**/*.json", "**/*.model", "**/*.txt", "**/*.png", "**/*.md"]
 
 [tool.ruff]
 lint.select = [

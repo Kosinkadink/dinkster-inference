@@ -14,7 +14,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_sparse_file_io_mapping_and_lifetime(tmp_path, monkeypatch):
-    directory = tmp_path / "\u4f60\u597d-\u00e9"
+    directory = tmp_path / '\u4f60\u597d-\xe9'
     directory.mkdir()
     monkeypatch.setattr(tempfile, "tempdir", str(directory))
     size = (1 << 32) + 8193

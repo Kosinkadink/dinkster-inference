@@ -1,23 +1,4 @@
-"""MiniMax H3 text/vision conditioning: Qwen3-VL-32B (truncated to 50 layers).
-
-The H3 presentation is NOT chat-templated: token ids are raw prompt/label text
-(no special tokens) with explicit vision blocks spliced in:
-
-  t2va:   <prompt>
-  fl2va:  "<Picture 1>: " <vision block> ["<Picture 2>: " <vision block>] <prompt>
-  ref2va: per condition in request order (1-based ordinals per type):
-            image -> "<Picture i>: " <vision block>
-            audio -> "<Audio j>: "              (audio never enters Qwen)
-            video -> "<Video k>: " then per 2-frame temporal block
-                     "<T.T seconds>" <vision block(2 frames)>
-          then <prompt>
-
-The conditioning is the unnormalized hidden state after LM layer 50 (the
-converted checkpoint is truncated there, so this is simply the last-layer
-output with no final norm). Vision-pad positions carry adaLN token tag 0
-(video modality) in the DiT; text positions carry tag 1 — the tags are
-returned alongside the embeddings as "minimax_token_tags".
-"""
+'MiniMax H3 text/vision conditioning: Qwen3-VL-32B (truncated to 50 layers).\n\nThe H3 presentation is NOT chat-templated: token ids are raw prompt/label text\n(no special tokens) with explicit vision blocks spliced in:\n\n  t2va:   <prompt>\n  fl2va:  "<Picture 1>: " <vision block> ["<Picture 2>: " <vision block>] <prompt>\n  ref2va: per condition in request order (1-based ordinals per type):\n            image -> "<Picture i>: " <vision block>\n            audio -> "<Audio j>: "              (audio never enters Qwen)\n            video -> "<Video k>: " then per 2-frame temporal block\n                     "<T.T seconds>" <vision block(2 frames)>\n          then <prompt>\n\nThe conditioning is the unnormalized hidden state after LM layer 50 (the\nconverted checkpoint is truncated there, so this is simply the last-layer\noutput with no final norm). Vision-pad positions carry adaLN token tag 0\n(video modality) in the DiT; text positions carry tag 1 \u2014 the tags are\nreturned alongside the embeddings as "minimax_token_tags".\n'
 
 import math
 

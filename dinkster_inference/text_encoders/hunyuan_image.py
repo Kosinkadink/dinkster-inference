@@ -23,8 +23,8 @@ class HunyuanImageTokenizer(QwenImageTokenizer):
         # ByT5 processing for HunyuanImage
         text_prompt_texts = []
         pattern_quote_double = r'\"(.*?)\"'
-        pattern_quote_chinese_single = r'‘(.*?)’'
-        pattern_quote_chinese_double = r'“(.*?)”'
+        pattern_quote_chinese_single = '\u2018(.*?)\u2019'
+        pattern_quote_chinese_double = '\u201c(.*?)\u201d'
 
         matches_quote_double = re.findall(pattern_quote_double, text)
         matches_quote_chinese_single = re.findall(pattern_quote_chinese_single, text)

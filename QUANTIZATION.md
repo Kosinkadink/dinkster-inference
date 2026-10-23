@@ -141,8 +141,8 @@ preserves the full preference list, including unsupported entries.
 Only the two methods above are accepted. SOL exposes `tau` (default `1.0`);
 higher values route fewer blocks through exact attention. Other SOL options use
 Comfy Kitchen defaults. SOL requires matching FP16/BF16 Q/K/V inputs with head
-dimension 128. Masked calls raise a RuntimeError; the fork's SOL adapter does not
-fall back to PyTorch attention. `low_precision_attention=False` does not disable SOL.
+dimension 128. Masked calls use the upstream PyTorch fallback.
+`low_precision_attention=False` does not disable SOL.
 
 Implementation: [format registry](dinkster_inference/quant_ops.py),
 [loaders and serialization](dinkster_inference/ops.py),

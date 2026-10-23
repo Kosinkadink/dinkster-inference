@@ -210,7 +210,7 @@ class Attention(nn.Module):
         # Apply RoPE if needed
         if freqs_cis_img is not None:
             qq, kk = apply_rotary_emb(q, k, freqs_cis_img, head_first=True)
-            assert qq.shape == q.shape and kk.shape == k.shape, \
+            assert qq.shape == q.shape and kk.shape == k.shape,\
                 f'qq: {qq.shape}, q: {q.shape}, kk: {kk.shape}, k: {k.shape}'
             q, k = qq, kk
             del qq, kk

@@ -324,7 +324,7 @@ class HunYuanDiT(nn.Module):
         text_states[:,-self.text_len:] = torch.where(text_states_mask[:,-self.text_len:].unsqueeze(2), text_states[:,-self.text_len:], padding[:self.text_len])
         text_states_t5[:,-self.text_len_t5:] = torch.where(text_states_t5_mask[:,-self.text_len_t5:].unsqueeze(2), text_states_t5[:,-self.text_len_t5:], padding[self.text_len:])
 
-        text_states = torch.cat([text_states, text_states_t5], dim=1)  # 2,205，1024
+        text_states = torch.cat([text_states, text_states_t5], dim=1)  # 2,205\uff0c1024
         # clip_t5_mask = torch.cat([text_states_mask, text_states_t5_mask], dim=-1)
 
         _, _, oh, ow = x.shape

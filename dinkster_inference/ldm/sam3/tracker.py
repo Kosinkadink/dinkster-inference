@@ -26,7 +26,7 @@ NO_OBJ_SCORE = -1024.0
 
 
 def to_spatial(x, H, W):
-    """Reshape (B, H*W, C) → (B, C, H, W)."""
+    'Reshape (B, H*W, C) \u2192 (B, C, H, W).'
     return x.view(x.shape[0], H, W, -1).permute(0, 3, 1, 2)
 
 class MultiplexState:
@@ -118,13 +118,13 @@ def fill_holes_in_mask_scores(mask, max_area=0):
     if max_area <= 0:
         return mask
 
-    # Fill holes: small connected components in background → foreground
+    # Fill holes: small connected components in background \u2192 foreground
     mask_bg = (mask <= 0).to(torch.uint8)
     _, areas_bg = _get_connected_components(mask_bg)
     small_bg = mask_bg.bool() & (areas_bg <= max_area)
     mask = torch.where(small_bg, 0.1, mask)
 
-    # Remove sprinkles: small connected components in foreground → background
+    # Remove sprinkles: small connected components in foreground \u2192 background
     # Only remove if area < min(max_area, half of total foreground area)
     mask_fg = (mask > 0).to(torch.uint8)
     fg_area_thresh = mask_fg.sum(dim=(2, 3), keepdim=True, dtype=torch.int32)

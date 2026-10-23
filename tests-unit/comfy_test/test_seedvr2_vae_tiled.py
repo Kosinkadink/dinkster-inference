@@ -222,14 +222,14 @@ def test_seedvr2_3d_routes_to_owned_encode_tiled_on_oom():
     generic_call = MagicMock(return_value=torch.zeros(1, _LATENT_CHANNELS, 2, 8, 8))
 
     with patch.object(sd_mod.model_management, "raise_non_oom",
-                      lambda e: None), \
+                      lambda e: None),\
          patch.object(sd_mod.model_management, "load_models_gpu",
-                      lambda *a, **k: None), \
+                      lambda *a, **k: None),\
          patch.object(sd_mod.model_management, "soft_empty_cache",
-                      lambda: None), \
+                      lambda: None),\
          patch.object(seedvr_vae_mod.VideoAutoencoderKLWrapper, "encode",
-                      side_effect=_force_regular_encode_oom), \
-         patch.object(sd_mod.VAE, "_encode_tiled_owned", seedvr2_call), \
+                      side_effect=_force_regular_encode_oom),\
+         patch.object(sd_mod.VAE, "_encode_tiled_owned", seedvr2_call),\
          patch.object(sd_mod.VAE, "encode_tiled_3d", generic_call):
         vae.encode(pixel_samples)
 
@@ -251,7 +251,7 @@ def test_non_seedvr2_encode_tiled_3d_default_overlap_is_concrete():
     pixel_samples = torch.zeros((1, 8, 64, 64, 3))
 
     with patch.object(sd_mod.model_management, "load_models_gpu",
-                      lambda *a, **k: None), \
+                      lambda *a, **k: None),\
          patch.object(sd_mod.VAE, "encode_tiled_3d", generic_call):
         vae.encode_tiled(pixel_samples)
 

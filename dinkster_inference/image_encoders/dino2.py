@@ -401,7 +401,7 @@ class Dinov2Model(torch.nn.Module):
         """Multi-view multi-layer feature extraction used by Depth Anything 3."""
         if pixel_values.ndim == 4:
             pixel_values = pixel_values.unsqueeze(1)
-        assert pixel_values.ndim == 5 and pixel_values.shape[2] == 3, \
+        assert pixel_values.ndim == 5 and pixel_values.shape[2] == 3,\
             f"expected (B,3,H,W) or (B,S,3,H,W); got {tuple(pixel_values.shape)}"
         B, S, _, H, W = pixel_values.shape
 

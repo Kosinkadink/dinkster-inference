@@ -533,7 +533,7 @@ class LensGptOssClipModel(nn.Module):
 
         input_ids, attn_mask = self._gather_tokens(token_weight_pairs)
         out = self.transformer(input_ids, attention_mask=attn_mask, capture_layers=self.selected_layers)
-        layers = out["hidden_states"]  # list of L x [B, S, H]
+        layers = out["hidden_states"]  # list of L \xd7 [B, S, H]
         stacked = torch.stack(layers, dim=2)  # [B, S, L, H]
 
         offset = self.txt_offset

@@ -565,8 +565,8 @@ def test_configured_decode_preserves_causal_and_tree_visibility(monkeypatch, seq
     import dinkster_inference.ldm.modules.attention as attention
     # Make the configured backend observably different from the default backend.
     @attention.wrap_attn
-    def scaled_attention(q, k, v, heads, *, sol_options, **kwargs):
-        return sol_options["tau"] * attention.attention_pytorch(q, k, v, heads, **kwargs)
+    def scaled_attention(q, k, v, heads, *, tau, **kwargs):
+        return tau * attention.attention_pytorch(q, k, v, heads, **kwargs)
 
     monkeypatch.setattr(attention.comfy_kitchen, "sol_attn_is_available", lambda device: True)
     monkeypatch.setattr(attention, "attention_comfy_kitchen_sol", scaled_attention)

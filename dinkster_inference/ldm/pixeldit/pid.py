@@ -1,7 +1,4 @@
-"""PiD — Pixel Diffusion Decoder. Decodes a Flux/SD3/Flux2/Z-Image latent
-directly to a 4x-upscaled image in 4 distilled flow-matching steps. PixDiT_T2I
-body + LQ projection branch injected before each MMDiT patch block.
-"""
+'PiD \u2014 Pixel Diffusion Decoder. Decodes a Flux/SD3/Flux2/Z-Image latent\ndirectly to a 4x-upscaled image in 4 distilled flow-matching steps. PixDiT_T2I\nbody + LQ projection branch injected before each MMDiT patch block.\n'
 
 from typing import List
 
@@ -179,7 +176,7 @@ class PidNet(PixDiT_T2I):
         self.rope_ref_grid_h = rope_ref_h // self.patch_size
         self.rope_ref_grid_w = rope_ref_w // self.patch_size
 
-        # Parent's PiTBlocks were built with plain RoPE — swap in NTK-aware.
+        # Parent's PiTBlocks were built with plain RoPE \u2014 swap in NTK-aware.
         def _pit_rope_fn(head_dim, h, w, device=None, dtype=torch.float32, **rope_opts):
             return precompute_freqs_cis_2d(head_dim, h, w, ref_grid_h=self.rope_ref_grid_h, ref_grid_w=self.rope_ref_grid_w, device=device, dtype=dtype, **rope_opts)
         for blk in self.pixel_blocks:
@@ -233,7 +230,7 @@ class PidNet(PixDiT_T2I):
 
     def _forward(self, x, timesteps, context=None, attention_mask=None, transformer_options={}, lq_latent=None, degrade_sigma=None, **kwargs):
         if lq_latent is None:
-            raise ValueError("PidNet requires lq_latent — attach via PiDConditioning")
+            raise ValueError('PidNet requires lq_latent \u2014 attach via PiDConditioning')
         expected_c = self.lq_proj.latent_channels
         if lq_latent.shape[1] != expected_c:
             raise ValueError(

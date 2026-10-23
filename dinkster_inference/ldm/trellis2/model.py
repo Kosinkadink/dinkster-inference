@@ -912,12 +912,12 @@ def _shape_proj_cond(global_cond: torch.Tensor, image_attn_mode: str,
     if image_attn_mode == "global":
         return global_cond
     if proj_feats is None:
-        raise ValueError(f"image_attn_mode={image_attn_mode!r} but trellis2_proj_feats is missing -- "
+        raise ValueError(f"image_attn_mode={image_attn_mode!r} but trellis2_proj_feats is missing \u2014 "
                          f"the stage setup node (or Pixal3DConditioning for SS) should have computed it.")
     if proj_in_channels is not None and proj_feats.shape[-1] != proj_in_channels:
         hint = ""
         if proj_feats.shape[-1] < proj_in_channels:
-            hint = (" -- the shape/texture stages need the NAF-upsampled feature map from "
+            hint = (' \u2014 the shape/texture stages need the NAF-upsampled feature map from '
                     "a Pixal3D DINOv3 checkpoint containing naf. weights.")
         raise ValueError(
             f"proj_feats for stage {stage!r} has {proj_feats.shape[-1]} channels, "

@@ -89,7 +89,7 @@ def get_deis_coeff_list(t_steps, max_order, N=10000, deis_mode='tab'):
 
         # Analytical solution, third order
         def get_def_intergral_3(a, b, c, start, end, d):
-            coeff = (end**4 - start**4) / 4 - (end**3 - start**3) * (a + b + c) / 3 \
+            coeff = (end**4 - start**4) / 4 - (end**3 - start**3) * (a + b + c) / 3\
                     + (end**2 - start**2) * (a*b + a*c + b*c) / 2 - (end - start) * a * b * c
             return coeff / ((d - a) * (d - b) * (d - c))
 

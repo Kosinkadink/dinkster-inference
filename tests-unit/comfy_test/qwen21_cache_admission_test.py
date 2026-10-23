@@ -41,7 +41,7 @@ def test_cache_budget_admits_all_conditions_together(monkeypatch, vram_margin, r
     monkeypatch.setattr(args, "high_ram", False)
     monkeypatch.setattr(memory_management, "RAM_CACHE_HEADROOM", 6 * 1024 ** 3)
     monkeypatch.setattr(system_memory, "virtual_memory_available", lambda: 3 * 1024 ** 3 + cache_bytes + ram_margin)
-    monkeypatch.setattr(model_management.get_model_manager(), "free_pins", lambda size, **kwargs: min(size, reclaimable))
+    monkeypatch.setattr(model_management, "free_pins", lambda size, **kwargs: min(size, reclaimable))
     monkeypatch.setattr(patcher, "get_free_memory", lambda device: 4 * cache_bytes + vram_margin)
 
     cache = model.get_writable_model(conditions, (1, 4, 3, 5), {"transformer_options": transformer_options}, torch.device("cpu"))

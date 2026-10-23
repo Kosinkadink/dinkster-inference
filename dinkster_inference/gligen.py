@@ -31,9 +31,9 @@ class GatedCrossAttentionDense(nn.Module):
 
     def forward(self, x, objs):
 
-        x = x + self.scale * \
+        x = x + self.scale *\
             torch.tanh(self.alpha_attn) * self.attn(self.norm1(x), objs, objs)
-        x = x + self.scale * \
+        x = x + self.scale *\
             torch.tanh(self.alpha_dense) * self.ff(self.norm2(x))
 
         return x
@@ -73,7 +73,7 @@ class GatedSelfAttentionDense(nn.Module):
 
         x = x + self.scale * torch.tanh(self.alpha_attn) * self.attn(
             self.norm1(torch.cat([x, objs], dim=1)))[:, 0:N_visual, :]
-        x = x + self.scale * \
+        x = x + self.scale *\
             torch.tanh(self.alpha_dense) * self.ff(self.norm2(x))
 
         return x
@@ -127,7 +127,7 @@ class GatedSelfAttentionDense2(nn.Module):
 
         # add residual to visual feature
         x = x + self.scale * torch.tanh(self.alpha_attn) * residual
-        x = x + self.scale * \
+        x = x + self.scale *\
             torch.tanh(self.alpha_dense) * self.ff(self.norm2(x))
 
         return x
@@ -185,7 +185,7 @@ class PositionNet(nn.Module):
         xyxy_null = self.null_position_feature.to(device=boxes.device, dtype=boxes.dtype).view(1, 1, -1)
 
         # replace padding with learnable null embedding
-        positive_embeddings = positive_embeddings * \
+        positive_embeddings = positive_embeddings *\
             masks + (1 - masks) * positive_null
         xyxy_embedding = xyxy_embedding * masks + (1 - masks) * xyxy_null
 

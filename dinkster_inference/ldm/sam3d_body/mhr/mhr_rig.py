@@ -1,6 +1,6 @@
 # Adapted from facebookresearch/MHR (Apache 2.0):
 #   https://github.com/facebookresearch/MHR/blob/main/mhr/mhr.py
-# Skinning ops follow facebookincubator/momentum (Apache 2.0) — formulas
+# Skinning ops follow facebookincubator/momentum (Apache 2.0) \u2014 formulas
 # verbatim from the upstream mhr_model.pt
 # (pymomentum.{skel_state,quaternion,backend.skel_state_backend}).
 # Original Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -61,13 +61,7 @@ def _quat_rotate(q, v):
 
 
 def _skel_multiply(s1, s2):
-    """Compose two skel states (..., 8). Returns parent ∘ child.
-
-    Mirrors pymomentum.skel_state.multiply: both quaternions are renormalized
-    before composition. With many FK levels the previously-normalized quats
-    drift in ULPs; upstream renormalizes defensively, so we do too to stay
-    bit-close to its outputs.
-    """
+    'Compose two skel states (..., 8). Returns parent \u2218 child.\n\n    Mirrors pymomentum.skel_state.multiply: both quaternions are renormalized\n    before composition. With many FK levels the previously-normalized quats\n    drift in ULPs; upstream renormalizes defensively, so we do too to stay\n    bit-close to its outputs.\n    '
     t1, sc1 = s1[..., :3], s1[..., 7:8]
     t2, sc2 = s2[..., :3], s2[..., 7:8]
     q1 = F.normalize(s1[..., 3:7], p=2, dim=-1, eps=1e-12)
@@ -196,7 +190,7 @@ class MHRRig(nn.Module):
     def _pose_correctives(self, joint_parameters):
         B = joint_parameters.shape[0]
         jp = joint_parameters.view(B, self.NUM_JOINTS, 7)
-        # Joints [2:] only — root and one more skipped. Take Euler XYZ (cols 3:6).
+        # Joints [2:] only \u2014 root and one more skipped. Take Euler XYZ (cols 3:6).
         feat = batch6DFromXYZ(jp[:, 2:, 3:6], return_9D=False)  # (B, 125, 6)
         feat[..., 0] -= 1.0
         feat[..., 4] -= 1.0

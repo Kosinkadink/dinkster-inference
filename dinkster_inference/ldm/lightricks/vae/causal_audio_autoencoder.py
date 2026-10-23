@@ -64,7 +64,7 @@ class StringConvertibleEnum(Enum):
                 elif isinstance(member.value, str):
                     valid_values.append(member.value)
 
-            raise ValueError(f"Invalid {cls.__name__} string: '{value}'. " f"Valid values are: {valid_values}")
+            raise ValueError(f"Invalid {cls.__name__} string: '{value}'. "  f"Valid values are: {valid_values}")
 
         raise ValueError(
             f"Cannot convert type {type(value).__name__} to {cls.__name__} enum. "

@@ -154,11 +154,11 @@ class DepthAnything3Net(nn.Module):
         """Run depth and optionally pose prediction."""
         if image.ndim == 4:
             image = image.unsqueeze(1)  # (B, 1, 3, H, W)
-        assert image.ndim == 5 and image.shape[2] == 3, \
+        assert image.ndim == 5 and image.shape[2] == 3,\
             f"image must be (B,3,H,W) or (B,S,3,H,W); got {tuple(image.shape)}"
 
         B, S, _, H, W = image.shape
-        assert H % self.PATCH_SIZE == 0 and W % self.PATCH_SIZE == 0, \
+        assert H % self.PATCH_SIZE == 0 and W % self.PATCH_SIZE == 0,\
             f"image H,W must be multiples of {self.PATCH_SIZE}; got {(H, W)}"
 
         # Camera-token preparation (multi-view path).

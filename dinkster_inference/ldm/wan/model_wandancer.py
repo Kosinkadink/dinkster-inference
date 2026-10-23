@@ -144,7 +144,7 @@ class WanDancerModel(WanModel):
         context = self.text_embedding(context)
 
         audio_emb = None
-        if audio_embed is not None: # encode music feature, [1, frame_num, 35] -> [1, F*8, dim]
+        if audio_embed is not None: # encode music feature\uff0c[1, frame_num, 35] -> [1, F*8, dim]
             music_feature = self.music_projection(audio_embed)
 
             music_seq_len = music_feature.shape[1]

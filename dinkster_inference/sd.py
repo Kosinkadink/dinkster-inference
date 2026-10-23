@@ -1,6 +1,5 @@
 import json
 import torch
-from dataclasses import replace
 from enum import Enum
 import logging
 
@@ -37,8 +36,6 @@ import os
 
 import dinkster_inference.utils
 import dinkster_inference.ops
-import dinkster_inference.gguf
-import dinkster_inference.gguf_ops
 import dinkster_inference.model_prefetch
 import dinkster_inference.storage
 
@@ -381,6 +378,10 @@ class CLIP:
                     if "end_percent" in add_dict:
                         if t_range[0] > add_dict["end_percent"]:
                             continue
+                    hooks_keyframes = scheduled_opts[1]
+                    for hook, keyframe in hooks_keyframes:
+                        hook.hook_keyframe._current_keyframe = keyframe
+                    # apply appropriate hooks with values that match new hook_keyframe
                     self.patcher.patch_hooks(all_hooks)
                     # perform encoding as normal
                     o = self.cond_stage_model.encode_token_weights(tokens)
@@ -898,7 +899,7 @@ class VAE:
                 self.memory_used_encode = lambda shape, dtype, num_layers = 8, kv_cache_multiplier = 0:\
                     estimate_memory(shape, dtype, num_layers, kv_cache_multiplier)
 
-                self.memory_used_decode = lambda shape, dtype, num_layers = 16, kv_cache_multiplier = 2: \
+                self.memory_used_decode = lambda shape, dtype, num_layers = 16, kv_cache_multiplier = 2:\
                     estimate_memory(shape, dtype, num_layers, kv_cache_multiplier)
 
                 self.first_stage_model = dinkster_inference.ldm.hunyuan3d.vae.ShapeVAE()
@@ -1624,33 +1625,12 @@ def load_clip_model_patcher(ckpt_paths, embedding_directory=None, clip_type=CLIP
 
 def load_clip(ckpt_paths, embedding_directory=None, clip_type=CLIPType.STABLE_DIFFUSION, model_options={}, disable_dynamic=False):
     clip_data = []
-    gguf_info = []
-    load_device = model_options.get("load_device", model_management.text_encoder_device())
-    decoded_dtype = model_options.get("dtype")
-    if decoded_dtype is None:
-        decoded_dtype = model_management.text_encoder_dtype(load_device)
     for p in ckpt_paths:
-        if p.lower().endswith(".gguf"):
-            if not gguf_info:
-                model_options = model_options.copy()
-                model_options["custom_operations"] = dinkster_inference.gguf_ops.GGUFOps
-            sd, info = dinkster_inference.gguf.load_gguf_state_dict(
-                p,
-                text_model=True,
-                residency_mode=model_options.get("gguf_residency", "memory"),
-                decoded_budget_bytes=model_options.get("gguf_decoded_budget_bytes"),
-                load_device=model_options.get("load_device"),
-                decoded_dtype=decoded_dtype,
-            )
-            gguf_info.append(info)
-        else:
-            sd, metadata = dinkster_inference.utils.load_torch_file(p, safe_load=True, return_metadata=True)
+        sd, metadata = dinkster_inference.utils.load_torch_file(p, safe_load=True, return_metadata=True)
         if model_options.get("custom_operations", None) is None:
             sd, metadata = dinkster_inference.utils.convert_old_quants(sd, model_prefix="", metadata=metadata)
         clip_data.append(sd)
     clip = load_text_encoder_state_dicts(clip_data, embedding_directory=embedding_directory, clip_type=clip_type, model_options=model_options, disable_dynamic=disable_dynamic)
-    if gguf_info:
-        clip.patcher.attachments["gguf"] = tuple(gguf_info)
     clip.patcher.cached_patcher_init = (load_clip_model_patcher, (ckpt_paths, embedding_directory, clip_type, model_options))
     return clip
 
@@ -2446,29 +2426,6 @@ def load_diffusion_model_state_dict(sd, model_options={}, metadata=None, disable
     else:
         unet_dtype = dtype
 
-    gguf_info = model_options.get("_gguf_info")
-    if gguf_info is not None:
-        gguf_residency = model_options.get("gguf_residency", "memory")
-        decoded_budget = model_options.get("gguf_decoded_budget_bytes")
-        if gguf_residency == "balanced" and decoded_budget is None:
-            decoded_budget = dinkster_inference.gguf._decoded_budget(
-                load_device, gguf_info.encoded_weight_bytes
-            )
-            gguf_info = replace(
-                gguf_info,
-                residency_mode="balanced",
-                decoded_budget_bytes=decoded_budget,
-            )
-        else:
-            sd, gguf_info = dinkster_inference.gguf.apply_gguf_residency(
-                sd,
-                gguf_info,
-                residency_mode=gguf_residency,
-                decoded_dtype=unet_dtype,
-                decoded_budget_bytes=decoded_budget,
-                load_device=load_device,
-            )
-
     if model_config.quant_config is not None:
         manual_cast_dtype = model_management.unet_manual_cast(None, load_device, model_config.supported_inference_dtypes)
     else:
@@ -2484,45 +2441,20 @@ def load_diffusion_model_state_dict(sd, model_options={}, metadata=None, disable
     model = model_config.get_model(new_sd, "")
     ModelPatcher = dinkster_inference.model_patcher.ModelPatcher if disable_dynamic else dinkster_inference.model_patcher.CoreModelPatcher
     model_patcher = ModelPatcher(model, load_device=load_device, offload_device=offload_device, fast_disk=dinkster_inference.storage.state_dict_fast_disk(new_sd))
-    assign_loaded_weights = model_options.get("assign_loaded_weights", False)
-    if assign_loaded_weights:
-        model_patcher.pin_offloaded_weights = False
     if not model_management.is_device_cpu(offload_device):
         model.to(offload_device)
-    model.load_model_weights(new_sd, "", assign=model_patcher.is_dynamic() or assign_loaded_weights)
+    model.load_model_weights(new_sd, "", assign=model_patcher.is_dynamic())
     left_over = sd.keys()
     if len(left_over) > 0:
         logging.info("left over keys in diffusion model: {}".format(left_over))
-    if gguf_info is not None:
-        model_patcher.attachments["gguf"] = gguf_info
-        if gguf_residency == "balanced" and model_options.get("gguf_decoded_budget_bytes") is None:
-            model_patcher.attachments["gguf_balanced_residency"] = (
-                dinkster_inference.gguf.GGUFBalancedResidency(
-                    gguf_info, unet_dtype, gguf_info.decoded_budget_bytes
-                )
-            )
     return model_patcher
 
 def load_diffusion_model(unet_path, model_options={}, disable_dynamic=False):
-    gguf_info = None
-    if unet_path.lower().endswith(".gguf"):
-        model_options = model_options.copy()
-        model_options["custom_operations"] = dinkster_inference.gguf_ops.GGUFOps()
-        sd, gguf_info = dinkster_inference.gguf.load_gguf_state_dict(
-            unet_path,
-            residency_mode="memory",
-            load_device=model_options.get("load_device"),
-        )
-        model_options["_gguf_info"] = gguf_info
-        metadata = gguf_info.metadata
-    else:
-        sd, metadata = dinkster_inference.utils.load_torch_file(unet_path, return_metadata=True)
+    sd, metadata = dinkster_inference.utils.load_torch_file(unet_path, return_metadata=True)
     model = load_diffusion_model_state_dict(sd, model_options=model_options, metadata=metadata, disable_dynamic=disable_dynamic)
     if model is None:
         logging.error("ERROR UNSUPPORTED DIFFUSION MODEL {}".format(unet_path))
         raise RuntimeError("ERROR: Could not detect model type of: {}\n{}".format(unet_path, model_detection_error_hint(unet_path, sd)))
-    if gguf_info is not None:
-        model.attachments.setdefault("gguf", gguf_info)
     model.cached_patcher_init = (load_diffusion_model, (unet_path, model_options))
     return model
 

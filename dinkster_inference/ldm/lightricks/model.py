@@ -1228,15 +1228,7 @@ class LTXVModel(LTXBaseModel):
         return x + mask.unsqueeze(-1).to(x.dtype) * embedding
 
     def _build_guide_self_attention_mask(self, x, transformer_options, merged_args):
-        """Build self-attention mask for per-guide attention attenuation.
-
-        Reads resolved_guide_entries from merged_args (computed in _process_input)
-        to build a log-space additive bias mask that attenuates noisy <-> guide
-        attention for each guide reference independently.
-
-        Returns None if no attenuation is needed (all strengths == 1.0 and no
-        spatial masks, or no guide tokens).
-        """
+        'Build self-attention mask for per-guide attention attenuation.\n\n        Reads resolved_guide_entries from merged_args (computed in _process_input)\n        to build a log-space additive bias mask that attenuates noisy \u2194 guide\n        attention for each guide reference independently.\n\n        Returns None if no attenuation is needed (all strengths == 1.0 and no\n        spatial masks, or no guide tokens).\n        '
         if isinstance(x, list):
             # AV model: x = [vx, ax]; use vx for token count and device
             total_tokens = x[0].shape[1]
@@ -1285,7 +1277,7 @@ class LTXVModel(LTXBaseModel):
                     f_lat, h_lat, w_lat,
                 )
                 # per_token shape: (B, f_lat*h_lat*w_lat).
-                # Collapse batch dim - the mask is assumed identical across the
+                # Collapse batch dim \u2014 the mask is assumed identical across the
                 # batch; validate and take the first element to get (1, tokens).
                 if per_token.shape[0] > 1:
                     ref = per_token[0]
@@ -1353,7 +1345,7 @@ class LTXVModel(LTXBaseModel):
             remaining_lat = f_lat - 1
             t = remaining_pix // remaining_lat
             if t < 1:
-                # Fewer pixel frames than latent frames - upsample by repeating
+                # Fewer pixel frames than latent frames \u2014 upsample by repeating
                 # the available pixel frames via nearest interpolation.
                 rest_flat = rearrange(
                     spatial_down[:, :, 1:, :, :],
@@ -1377,7 +1369,7 @@ class LTXVModel(LTXBaseModel):
                 rest = rest.mean(dim=3)
             latent_mask = torch.cat([first_frame, rest], dim=2)
         elif f_lat > 1:
-            # Single pixel frame but multiple latent frames - repeat the
+            # Single pixel frame but multiple latent frames \u2014 repeat the
             # single frame across all latent frames.
             latent_mask = first_frame.expand(-1, -1, f_lat, -1, -1)
         else:

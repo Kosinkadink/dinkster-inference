@@ -1,11 +1,4 @@
-"""HiDream-O1-Image transformer.
-
-Pixel-space DiT built on Qwen3-VL: the vision tower (Qwen35VisionModel)
-encodes ref images, the Qwen3-VL-8B decoder (Llama2_ with interleaved MRoPE)
-processes a unified text+image sequence, and 32x32 patch embed/unembed
-shims map raw RGB in and out of LLM hidden space. The Qwen3-VL deepstack
-mergers go unused - their weights are dropped at load.
-"""
+'HiDream-O1-Image transformer.\n\nPixel-space DiT built on Qwen3-VL: the vision tower (Qwen35VisionModel)\nencodes ref images, the Qwen3-VL-8B decoder (Llama2_ with interleaved MRoPE)\nprocesses a unified text+image sequence, and 32x32 patch embed/unembed\nshims map raw RGB in and out of LLM hidden space. The Qwen3-VL deepstack\nmergers go unused \u2014 their weights are dropped at load.\n'
 
 from dataclasses import dataclass, field
 from typing import List, Optional

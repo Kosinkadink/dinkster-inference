@@ -195,7 +195,7 @@ class Timesteps(nn.Module):
         self.num_channels = num_channels
         half_dim = num_channels // 2
 
-        # precompute the "inv_freq" vector once
+        # precompute the \u201cinv_freq\u201d vector once
         exponent = -math.log(max_period) * torch.arange(
             half_dim, dtype=torch.float32
         ) / (half_dim - downscale_freq_shift)
@@ -204,7 +204,7 @@ class Timesteps(nn.Module):
 
         # pad
         if num_channels % 2 == 1:
-            # we'll pad a zero at the end of the cos-half
+            # we\u2019ll pad a zero at the end of the cos-half
             inv_freq = torch.cat([inv_freq, inv_freq.new_zeros(1)])
 
         # register to buffer so it moves with the device

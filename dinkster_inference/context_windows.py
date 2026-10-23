@@ -10,8 +10,6 @@ import dinkster_inference.model_management
 import dinkster_inference.patcher_extension
 import dinkster_inference.utils
 import dinkster_inference.conds
-import dinkster_inference.window_plan
-import dinkster_inference.window_execution
 if TYPE_CHECKING:
     from dinkster_inference.model_base import BaseModel
     from dinkster_inference.model_patcher import ModelPatcher
@@ -339,96 +337,6 @@ class ContextFuseMethod:
     name: str
     func: Callable
 
-
-@dataclass
-class TemporalWindowPlan:
-    """Compile a stock temporal schedule as one media-axis plan layer."""
-
-    context_schedule: ContextSchedule
-    fuse_method: ContextFuseMethod
-    context_length: int = 1
-    context_overlap: int = 0
-    context_stride: int = 1
-    closed_loop: bool = False
-    _step: int = 0
-
-    def layer(self, extent: int, model_options: dict[str]) -> dinkster_inference.window_plan.WindowPlanLayer:
-        windows = self.context_schedule.func(extent, self, model_options)
-        modular = self.context_schedule.name == ContextSchedules.UNIFORM_LOOPED
-        weights = {
-            ContextFuseMethods.FLAT: dinkster_inference.window_plan.WindowWeightKind.FLAT,
-            ContextFuseMethods.PYRAMID: dinkster_inference.window_plan.WindowWeightKind.PYRAMID,
-            ContextFuseMethods.OVERLAP_LINEAR: dinkster_inference.window_plan.WindowWeightKind.OVERLAP_LINEAR,
-        }
-        try:
-            weight = weights[self.fuse_method.name]
-        except KeyError:
-            raise ValueError(
-                f"fuse method {self.fuse_method.name!r} has no layered window-plan merge"
-            ) from None
-        overlap = self.context_overlap if weight is dinkster_inference.window_plan.WindowWeightKind.OVERLAP_LINEAR else 0
-        return dinkster_inference.window_plan.WindowPlanLayer(
-            ("temporal",),
-            tuple(
-                dinkster_inference.window_plan.LayerWindow(
-                    (dinkster_inference.window_plan.WindowIndexList(tuple(window), modular),)
-                )
-                for window in windows
-            ),
-            (dinkster_inference.window_plan.WindowWeightProfile(weight, overlap),),
-            dinkster_inference.window_plan.MergeDeclaration(),
-        )
-
-    def executor(
-        self,
-        *,
-        extent: int,
-        latent_dimension: int,
-        model_options: dict[str],
-        layers: tuple[dinkster_inference.window_plan.WindowPlanLayer, ...] = (),
-        axes: tuple[dinkster_inference.window_plan.MediaAxis, ...] = (),
-        kinds: tuple[dinkster_inference.window_plan.WindowKind, ...] = (),
-        latent_axis_dimensions: tuple[tuple[str, int], ...] = (),
-    ) -> dinkster_inference.window_execution.WindowPlanExecutor:
-        temporal_axis = dinkster_inference.window_plan.MediaAxis(
-            "temporal",
-            extent,
-            wrappable=self.context_schedule.name == ContextSchedules.UNIFORM_LOOPED,
-        )
-        declared_axes = tuple(
-            sorted(
-                (temporal_axis,) + tuple(axis for axis in axes if axis.name != "temporal"),
-                key=lambda axis: axis.name,
-            )
-        )
-        if not kinds:
-            kinds = (
-                dinkster_inference.window_plan.WindowKind(
-                    "latent",
-                    (
-                        dinkster_inference.window_plan.KindAxisMap(
-                            "temporal",
-                            extent,
-                            dinkster_inference.window_plan.IntegerAffineIndexMap(1),
-                        ),
-                    ),
-                ),
-            )
-        plan = dinkster_inference.window_plan.compile_window_plan(
-            axes=declared_axes,
-            kinds=kinds,
-            layers=(self.layer(extent, model_options),) + layers,
-        )
-        latent_axes = (("temporal", latent_dimension),) + tuple(
-            item for item in latent_axis_dimensions if item[0] != "temporal"
-        )
-        return dinkster_inference.window_execution.WindowPlanExecutor(
-            plan,
-            dinkster_inference.window_execution.WindowTensorLayout(
-                "latent", tuple(sorted(latent_axes))
-            ),
-        )
-
 ContextResults = collections.namedtuple("ContextResults", ['window_idx', 'sub_conds_out', 'sub_conds', 'window'])
 class IndexListContextHandler(ContextHandlerABC):
     def __init__(self, context_schedule: ContextSchedule, fuse_method: ContextFuseMethod, context_length: int=1, context_overlap: int=0, context_stride: int=1,
@@ -616,7 +524,7 @@ class IndexListContextHandler(ContextHandlerABC):
                             if handled:
                                 continue
                             if isinstance(cond_value, torch.Tensor):
-                                if (self.dim < cond_value.ndim and cond_value.size(self.dim) == x_in.size(self.dim)) or \
+                                if (self.dim < cond_value.ndim and cond_value.size(self.dim) == x_in.size(self.dim)) or\
                                    (cond_value.ndim < self.dim and cond_value.size(0) == x_in.size(self.dim)):
                                     new_cond_item[cond_key] = window.get_tensor(cond_value, device)
                             # Handle audio_embed (temporal dim is 1)
@@ -632,7 +540,7 @@ class IndexListContextHandler(ContextHandlerABC):
                                     new_cond_item[cond_key] = cond_value._copy_with(sliced_vace)
                             # if has cond that is a Tensor, check if needs to be subset
                             elif hasattr(cond_value, "cond") and isinstance(cond_value.cond, torch.Tensor):
-                                if  (self.dim < cond_value.cond.ndim and cond_value.cond.size(self.dim) == x_in.size(self.dim)) or \
+                                if  (self.dim < cond_value.cond.ndim and cond_value.cond.size(self.dim) == x_in.size(self.dim)) or\
                                     (cond_value.cond.ndim < self.dim and cond_value.cond.size(0) == x_in.size(self.dim)):
                                     new_cond_item[cond_key] = cond_value._copy_with(window.get_tensor(cond_value.cond, device, retain_index_list=self.cond_retain_index_list))
                             elif cond_key == "num_video_frames": # for SVD

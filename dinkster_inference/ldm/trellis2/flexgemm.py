@@ -23,7 +23,7 @@ class TorchHashMap:
         self._n = self.sorted_keys.numel()
 
     # Chunk size for lookup_flat, caps each transient to ~CHUNK rows.
-    _LOOKUP_CHUNK = 1 << 23   # 8M rows ≈ 64 MB per int64 temp
+    _LOOKUP_CHUNK = 1 << 23   # 8M rows \u2248 64 MB per int64 temp
 
     def lookup_flat(self, flat_keys: torch.Tensor) -> torch.Tensor:
         N = flat_keys.shape[0]

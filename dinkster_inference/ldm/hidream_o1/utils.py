@@ -1,8 +1,4 @@
-"""HiDream-O1 input-prep helpers: image/resolution math and unified-sequence
-RoPE position-id assembly. The fix_point offset in get_rope_index_fix_point
-lets the target image and patchified ref images share spatial RoPE positions
-despite living at different sequence indices — same 2D image plane.
-"""
+'HiDream-O1 input-prep helpers: image/resolution math and unified-sequence\nRoPE position-id assembly. The fix_point offset in get_rope_index_fix_point\nlets the target image and patchified ref images share spatial RoPE positions\ndespite living at different sequence indices \u2014 same 2D image plane.\n'
 
 import math
 from typing import Optional

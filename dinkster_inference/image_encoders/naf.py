@@ -1,10 +1,4 @@
-"""NAF (Neighborhood Attention Filtering) feature upsampler.
-
-Vendored from valeoai/NAF (Apache-2.0):
-  https://github.com/valeoai/NAF - src/model/naf.py + src/layers/{convolutions,attentions,rope}.py
-Used by Pixal3D's shape/texture conditioning to produce
-the 2x-upsampled half of the 2048-channel proj feature map.
-"""
+"NAF (Neighborhood Attention Filtering) feature upsampler.\n\nVendored from valeoai/NAF (Apache-2.0):\n  https://github.com/valeoai/NAF \u2014 src/model/naf.py + src/layers/{convolutions,attentions,rope}.py\nUsed by Pixal3D's shape/texture conditioning to produce\nthe 2x-upsampled half of the 2048-channel proj feature map.\n"
 
 import math
 from typing import Tuple
@@ -25,7 +19,7 @@ def na2d_pure(
         k: torch.Tensor,                # [B, n_heads * d_qk, h, w] at LR; H and W are multiples of h and w.
         v: torch.Tensor,                # [B, n_heads * d_v, h, w] at LR.
         kernel_size: Tuple[int, int],   # (Kh, Kw) attention window over the LR grid.
-        scale: float,                   # 1 / sqrt(d_qk) scaling for the Q*K scores.
+        scale: float,                   # 1 / sqrt(d_qk) scaling for the Q\xb7K scores.
         output: torch.Tensor = None,    # Pre-allocated [B, n_heads, d_v, H, W] buffer (may be on CPU).
     ) -> torch.Tensor:                  # [B, n_heads, d_v, H, W] (caller views as BCHW).
     """natten.na2d on K/V nearest-upsampled to the HR grid, with the upsample factor as dilation.
@@ -162,7 +156,7 @@ class ImageEncoder(nn.Module):
         self.rope = RoPE(embed_dim=out_channels, num_heads=heads_rope, base=rope_base)
 
     def forward(self, x: torch.Tensor, output_size: Tuple[int, int]) -> torch.Tensor:
-        # Avoid running the conv stacks on >4x the target resolution.
+        # Avoid running the conv stacks on >4\xd7 the target resolution.
         out_h, out_w = output_size
         if x.shape[-2] > 4 * out_h or x.shape[-1] > 4 * out_w:
             x = F.interpolate(x, size=(min(x.shape[-2], 4 * out_h),

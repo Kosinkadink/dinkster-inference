@@ -144,7 +144,7 @@ def pose_encoding_to_extri_intri(pose_encoding: torch.Tensor, image_size_hw: Tup
     fov_h = pose_encoding[..., 7]
     fov_w = pose_encoding[..., 8]
     # Normalize to unit quaternion. CameraDec outputs raw values; a near-zero
-    # quaternion causes two_s = 2/norm² → inf in quat_to_mat → NaN extrinsics.
+    # quaternion causes two_s = 2/norm\xb2 \u2192 inf in quat_to_mat \u2192 NaN extrinsics.
     quat = quat / quat.norm(dim=-1, keepdim=True).clamp(min=1e-6)
     R = quat_to_mat(quat)
     extrinsics = torch.cat([R, T[..., None]], dim=-1)

@@ -680,11 +680,11 @@ def detect_unet_config(state_dict, key_prefix, metadata=None):
         if patch_proj_key in state_dict_keys:
             w = state_dict[patch_proj_key]
             if w.ndim == 4:
-                # Conv2d: [out, in, kh, kw] - CogVideoX 1.0
+                # Conv2d: [out, in, kh, kw] \u2014 CogVideoX 1.0
                 dit_config["in_channels"] = w.shape[1]
                 dit_config["patch_size"] = w.shape[2]
             elif w.ndim == 2:
-                # Linear: [out, in_channels * patch_size * patch_size * patch_size_t] - CogVideoX 1.5
+                # Linear: [out, in_channels * patch_size * patch_size * patch_size_t] \u2014 CogVideoX 1.5
                 dit_config["patch_size"] = 2
                 dit_config["patch_size_t"] = 2
                 dit_config["in_channels"] = w.shape[1] // (2 * 2 * 2)  # 256 // 8 = 32
@@ -951,7 +951,7 @@ def detect_unet_config(state_dict, key_prefix, metadata=None):
         dit_config["timestep_scale"] = 1000.0
         return dit_config
 
-    if '{}transformer_blocks.0.attn.norm_added_q.weight'.format(key_prefix) in state_dict_keys \
+    if '{}transformer_blocks.0.attn.norm_added_q.weight'.format(key_prefix) in state_dict_keys\
             and '{}transformer_blocks.0.img_mlp.w1.weight'.format(key_prefix) in state_dict_keys:  # Lens
         img_in_w = state_dict['{}img_in.weight'.format(key_prefix)]
         proj_out_w = state_dict['{}proj_out.weight'.format(key_prefix)]
@@ -967,7 +967,7 @@ def detect_unet_config(state_dict, key_prefix, metadata=None):
         return {
             "image_model": "lens",
             "in_channels": img_in_w.shape[1],
-            "out_channels": proj_out_w.shape[0] // 4,  # patch_size ** 2 (=2^2 default)
+            "out_channels": proj_out_w.shape[0] // 4,  # patch_size ** 2 (=2\xb2 default)
             "num_layers": count_blocks(state_dict_keys, '{}transformer_blocks.'.format(key_prefix) + '{}.'),
             "num_attention_heads": img_in_w.shape[0] // 64,  # // attention_head_dim default
             "enc_hidden_dim": enc_hidden_dim,

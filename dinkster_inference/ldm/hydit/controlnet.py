@@ -264,7 +264,7 @@ class HunYuanControlNet(nn.Module):
             padding[self.text_len :],
         )
 
-        text_states = torch.cat([text_states, text_states_t5], dim=1)  # 2,205，1024
+        text_states = torch.cat([text_states, text_states_t5], dim=1)  # 2,205\uff0c1024
 
         # _, _, oh, ow = x.shape
         # th, tw = oh // self.patch_size, ow // self.patch_size
