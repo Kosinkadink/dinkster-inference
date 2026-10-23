@@ -72,7 +72,9 @@ def run_worker(args):
     started = time.monotonic()
     if args.case == "h3":
         model = sd.load_diffusion_model(str(args.h3_model))
-        clip = sd.load_clip([str(args.h3_clip)], clip_type=sd.CLIPType.MINIMAX)
+        # The 32B encoder exceeds the comparison GPU's memory during dequantization.
+        clip = sd.load_clip([str(args.h3_clip)], clip_type=sd.CLIPType.MINIMAX,
+                            model_options={"load_device": torch.device("cpu"), "offload_device": torch.device("cpu")})
         vae = sd.VAE(sd=modules["utils"].load_torch_file(str(args.h3_vae)))
         positive = clip.encode_from_tokens_scheduled(clip.tokenize(PROMPT))
         negative = []

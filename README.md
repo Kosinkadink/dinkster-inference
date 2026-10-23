@@ -51,7 +51,8 @@ strength 0 to 1 over the first half of sampling (first guarantee 1, subsequent
 guarantees 0, matching upstream's interpolated-keyframe node); ControlNet strength
 1 over timestep range 0.0-0.6 using a fixed asymmetric edge map; and overlapping
 16-frame context windows over a 32-frame batch. H3 uses 1344x768, 124 frames,
-seed 1064, Euler/normal, 20 steps and CFG 6. If H3 weights are absent, supply a
+seed 1064, Euler/normal, 20 steps and CFG 6, with the 32B text encoder on CPU
+on both sides to avoid GPU dequantization memory exhaustion. If H3 weights are absent, supply a
 bundled Flux dev checkpoint via `--flux-checkpoint` instead (512x512, four steps,
 seed 459, CFG 1, guidance 3.5). `--cases` selects individual cases for diagnosis.
 
