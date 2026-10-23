@@ -60,7 +60,7 @@ import importlib
 import sys
 cli = importlib.import_module('{first}.cli_args')
 cli.args.cpu = True
-for suffix in ('cli_args', 'model_patcher', 'samplers', 'sd', 'ldm.modules.attention'):
+for suffix in ('cli_args', 'model_patcher', 'samplers', 'sd', 'supported_models', 'ldm.modules.attention'):
     first = importlib.import_module('{first}.' + suffix)
     canonical = importlib.import_module('dinkster_inference.' + suffix)
     alias = importlib.import_module('comfy.' + suffix)
@@ -70,6 +70,7 @@ for suffix in ('cli_args', 'model_patcher', 'samplers', 'sd', 'ldm.modules.atten
     assert alias.alias_state_probe is canonical.alias_state_probe
 assert (importlib.import_module('comfy').model_patcher.ModelPatcher is
         importlib.import_module('dinkster_inference.model_patcher').ModelPatcher)
+assert importlib.import_module('comfy.supported_models').comfy is importlib.import_module('comfy')
 """
     subprocess.run([sys.executable, "-I", "-c", program], check=True,
                    env={**os.environ, "CUDA_VISIBLE_DEVICES": ""})

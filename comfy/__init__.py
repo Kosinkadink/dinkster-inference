@@ -13,7 +13,9 @@ class _AliasLoader(importlib.abc.Loader):
         return importlib.import_module("dinkster_inference" + spec.name[len("comfy"):])
 
     def exec_module(self, module):
-        pass
+        # Upstream callers also access the package binding inside imported modules.
+        if "dinkster_inference" in module.__dict__:
+            module.comfy = module.dinkster_inference
 
 
 class _AliasFinder(importlib.abc.MetaPathFinder):
