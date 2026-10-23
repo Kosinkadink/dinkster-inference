@@ -32,4 +32,4 @@ jobs:
       - name: Check inference and packaging lint
         run: python -m ruff check dinkster_inference comfy node_helpers.py tools
       - name: Run retained library tests
-        run: python -m pytest -q tests-unit/comfy_test tests-unit/comfy_quant
+        run: python -m pytest -q tests-unit/comfy_test tests-unit/comfy_quant tests-unit/workflow_comparison_test.py
