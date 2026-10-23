@@ -15,8 +15,8 @@ The console-tip implementation in `app/product_tips.py`, its
 `tests-unit/app_test/product_tips_test.py` coverage, and changes in `main.py`
 are omitted with the application. The upstream `--disable-product-tips`
 parser option is retained for library parity but no console tips are shipped.
-MOSS edit node controls in `comfy_extras/nodes_moss_image.py`, the preview
-changes in `execution.py`, and `tests/execution/test_execution.py` are also
+MOSS edit node controls in `comfy_extras/nodes_moss_image.py`, failed-stage
+status in `execution.py`, and `tests/execution/test_execution.py` are also
 application-only; MOSS attention-bias conditioning in the library is retained.
 
 The following upstream tests within those two directories are omitted because
