@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -10,7 +11,6 @@ from pathlib import Path
 from rewrite_upstream_imports import rewrite
 
 
-FORK_POINT = "bc5f880dbdd43e426077f42ccec53bb577ffee9f"
 OMITTED_TESTS = {
     "folder_path_test.py",
     "image_invert_test.py",
@@ -69,12 +69,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--upstream", type=Path, help="Existing clean detached upstream checkout")
     args = parser.parse_args()
+    fork_point = re.search(r"Upstream fork point:.*?`([0-9a-f]{40})`",
+                           (ROOT / "docs/ledger.md").read_text(), re.DOTALL).group(1)
     with tempfile.TemporaryDirectory() as directory:
         checkout = Path(directory) / "ComfyUI"
         subprocess.run(["git", "clone", "--quiet", "--no-checkout",
                         str(args.upstream) if args.upstream else "https://github.com/comfyanonymous/ComfyUI.git",
                         str(checkout)], check=True)
-        subprocess.run(["git", "-C", str(checkout), "checkout", "--quiet", "--detach", FORK_POINT], check=True)
+        subprocess.run(["git", "-C", str(checkout), "checkout", "--quiet", "--detach", fork_point], check=True)
         raise SystemExit(compare(checkout))
 
 
