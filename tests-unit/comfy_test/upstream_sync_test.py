@@ -58,7 +58,8 @@ def sync_repo(tmp_path, request):
         "dinkster_inference/stub.py": "",
         "tests-unit/comfy_test/stub.py": "",
         "tests-unit/comfy_quant/stub.py": "",
-        "tests-unit/deploy_environment_test.py": "",
+        "node_helpers.py": "",
+        "comfy/__init__.py": "# import alias\n",
     }, "Fork base")
     marker = commit(base, {"UPSTREAM_SYNC_CONFLICTS.md": f"Upstream commit: `{old}`\n"},
                     f"Record upstream sync conflicts through {old[:8]}")
@@ -201,6 +202,8 @@ def test_sync_replaces_only_workflow_marker_or_ledger_history(sync_repo, kind):
     path = "UPSTREAM_SYNC_CONFLICTS.md" if "conflict=true" in output.read_text() else "docs/ledger.md"
     assert target in git(remote, "show", f"{head}:{path}")
     assert json.loads(state.read_text())["comments"] == []
+    assert git(remote, "show", f"{head}:comfy/__init__.py") == "# import alias"
+    assert git(remote, "show", f"{head}:dinkster_inference/stub.py") == ""
     result = run("upstream_pr", TARGET=target, COMMITS="", CONFLICT="true",
                  CONFLICTS="conflict.txt", GUARDED="")
     assert result.returncode == 0, result.stderr
