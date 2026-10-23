@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib
+import importlib.machinery
 import importlib.metadata
+import importlib.util
 import json
 import os
 import subprocess
@@ -43,6 +45,11 @@ def compare_arrays(left, right):
 def run_worker(args):
     if args.side == "upstream":
         sys.path.insert(0, str(args.upstream))
+        # A site-installed regular comfy alias otherwise beats upstream's namespace package.
+        spec = importlib.machinery.PathFinder.find_spec("comfy", [str(args.upstream)])
+        if spec is None:
+            raise ValueError("Upstream checkout has no comfy package")
+        sys.modules["comfy"] = importlib.util.module_from_spec(spec)
         package = "comfy"
     else:
         package = "dinkster_inference"
@@ -52,6 +59,10 @@ def run_worker(args):
     cli.args.use_pytorch_cross_attention = True
     modules = {name: importlib.import_module(package + "." + name) for name in
                ("sd", "sample", "hooks", "controlnet", "context_windows", "utils", "model_management", "nested_tensor")}
+    for module in modules.values():
+        is_reference = Path(module.__file__).resolve().is_relative_to(args.upstream)
+        if is_reference != (args.side == "upstream"):
+            raise ValueError(f"Worker imported the wrong source: {module.__file__}")
     sd, sample, hooks = modules["sd"], modules["sample"], modules["hooks"]
     torch.use_deterministic_algorithms(True)
     torch.backends.cuda.matmul.allow_tf32 = False
