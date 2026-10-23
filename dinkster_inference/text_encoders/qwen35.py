@@ -375,7 +375,7 @@ class GatedDeltaNet(nn.Module):
             kv = past_key_value
             with dinkster_inference.ops.CastBiasWeightContext(self.conv1d, proj, offloadable=True) as (conv_weight, conv_bias):
                 comfy_kitchen.deltanet_conv_step_deferred(proj, kv.conv_state, conv_weight, conv_bias, kv.proj_buf, kv.qkv_buf, kv.ctl)
-            with dinkster_inference.ops.CastBiasWeightContext(self.in_proj_a, x, offloadable=True) as (w_a, _), \
+            with dinkster_inference.ops.CastBiasWeightContext(self.in_proj_a, x, offloadable=True) as (w_a, _),\
                  dinkster_inference.ops.CastBiasWeightContext(self.in_proj_b, x, offloadable=True) as (w_b, _):
                 if isinstance(w_a, QuantizedTensor):
                     w_a = w_a.dequantize()

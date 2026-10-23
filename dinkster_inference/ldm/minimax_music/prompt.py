@@ -32,7 +32,7 @@ def _remove_markdown_format(text):
         lines.append(line.rstrip())
     text = "\n".join(lines)
     text = re.sub(r"^\s*[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
-    return text.replace("• ", "").replace("    ", "")
+    return text.replace('\u2022 ', "").replace("    ", "")
 
 
 def clean_caption(caption):

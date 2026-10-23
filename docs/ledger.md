@@ -1,62 +1,24 @@
-# Fork ledger
+# Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
 `bc5f880dbdd43e426077f42ccec53bb577ffee9f`.
 
-| File or subsystem | Tier | Reason |
-| --- | --- | --- |
-| `dinkster_inference/` except entries below | kept upstream | ComfyUI inference implementation, mechanically renamed from `comfy`, rewritten to import `dinkster_inference`, and source-normalized to ASCII without runtime changes |
-| `comfy_extras/nodes_images.py`, `tests-unit/comfy_extras_test/image_color_space_acescg_test.py` | omitted upstream | ACEScg color conversion and advanced EXR saving are application-node behavior; neither the image-node application nor its color-space tests are shipped in the inference library |
-| `dinkster_inference/ldm/modules/diffusionmodules/model.py`, Flux2 VAE detection in `dinkster_inference/sd.py` | kept upstream | Retains fused normalization and row-strip Flux2 VAE execution on served devices, with the legacy path on CPU and other unserved configurations; uses the existing quant_ops bridge and comfy-kitchen 0.2.40 APIs without changing dependency pins or the fork's model loading ownership |
-| `dinkster_inference/cli_args.py` assets flags | changed by us | Retains the existing inert `--enable-assets` and `--enable-asset-hashing` options; omits the upstream `--disable-assets` and `--previews-directory` options and assets-default help changes because the assets application is not shipped |
-| `dinkster_inference/hooks.py` | changed by us | Owns `conditioning_set_values` instead of importing the deleted application helper |
-| `dinkster_inference/window_plan.py` | ours only | Compiles layered media-axis window declarations into canonical joint windows with deterministic weighted merge semantics |
-| `dinkster_inference/window_execution.py`, `dinkster_inference/samplers.py` window-plan dispatch | changed by us | Evaluates compiled joint windows through declared tensor kinds, gathers full-domain fields per window, and merges once with per-occurrence accumulation |
-| `dinkster_inference/window_execution.py` invariant kinds | changed by us | Keeps media axes absent from a tensor kind unsliced and merges their repeated joint-window contributions without assigning raw tensor dimensions |
-| `dinkster_inference/window_execution.py`, `dinkster_inference/samplers.py` window masks | changed by us | Compiles conditioning and ControlNet effect masks once in full-domain coordinates and gathers them through each declared semantic window |
-| `dinkster_inference/minimax_control.py` | ours only | Loads and applies MiniMax H3 Fun ControlNet model patches, compiling control inputs once over the full video domain and gathering their latent per semantic window |
-| `dinkster_inference/context_windows.py` temporal adapter | changed by us | Compiles stock temporal context schedules into the same layered media-axis plan used by spatial windows |
-| `dinkster_inference/ldm/modules/attention.py` | changed by us | Supports caller-owned attention function registries for isolated worker processes while preserving the upstream default registry |
-| `dinkster_inference/patch_program.py`, `dinkster_inference/model_patcher.py` | changed by us | Represents ordered weight changes as immutable, content-identified patch programs while preserving the existing model patcher calls |
-| `dinkster_inference/model_management.py`, `dinkster_inference/patch_program.py`, `dinkster_inference/model_patcher.py`, `tests-unit/comfy_test/training_api_test.py` | changed by us | Owns per-model training execution settings and reversible gradient checkpoint entries; guards the training import contract and isolated inference execution in CI |
-| `dinkster_inference/patch_program.py`, `dinkster_inference/model_patcher.py`, `dinkster_inference/model_base.py` | changed by us | Adds symbolic module insertions with reversible materialization and clone, sharing, device, and offload policies behind existing patcher calls |
-| `dinkster_inference/model_management.py` | changed by us | Routes model loading, unloading, partial offload, cleanup, and pin eviction through a process-owned manager while preserving existing calls |
-| `dinkster_inference/contribution_gain.py`, `dinkster_inference/hooks.py`, `dinkster_inference/controlnet.py`, `dinkster_inference/samplers.py` | changed by us | Realizes shared timeline, site, guidance-lane, and effect-mask gains once against the executed sigma table for hooks, controls, and conditioning |
-| `dinkster_inference/sampler_assembly.py`, `dinkster_inference/res4lyf_rk.py`, `dinkster_inference/res4lyf_sampler.py`, `dinkster_inference/samplers.py` | changed by us | Assembles typed samplers with ordered model-evaluation substeps and independent step/substep noise streams, including receipt-backed RES4LYF RK solvers, while preserving ordinary sampler behavior |
-| `dinkster_inference/ldm/sam3d_body/face_landmarker.py` | changed by us | Relocates the upstream face landmarker required by the retained SAM 3D Body model from deleted `comfy_extras` |
-| `dinkster_inference/ldm/sam3d_body/model/model.py` | changed by us | Imports the relocated face landmarker from the library |
-| `tests-unit/comfy_test/`, `tests-unit/comfy_quant/`, `tests-unit/deploy_environment_test.py` | changed by us | Retains pure-library tests and rewrites their package imports |
-| `pyproject.toml` | ours only | Builds distribution `dinkster-inference` at version 0.1.0, discovers `dinkster_inference`, and declares runtime dependencies; the upstream 0.42.0 package version bump is ledger-only |
-| `requirements.txt` | changed by us | Tracks upstream workflow templates 0.11.96 in the requirements environment without adding application packages to wheel metadata; retains frontend 1.53.10 and embedded docs 0.5.14; the upstream frontend 1.57.1 bump is ledger-only because the frontend application is not shipped or declared as a wheel dependency; keeps comfy-kitchen synchronized with wheel metadata |
-| `tools/rewrite_upstream_imports.py` | ours only | Applies the required package import rewrite after upstream cherry-picks |
-| `.github/workflows/ci.yml` | ours only | Builds and installs the wheel, verifies standalone imports, and runs the retained library tests |
-| `QUANTIZATION.md` | changed by us | Rewrites source links to `dinkster_inference` and documents that masked SOL calls raise RuntimeError instead of falling back to PyTorch attention |
-| ComfyUI application and release workflows | changed by us | Removed because their server, API, frontend, packaging, and release targets are not part of this library |
-| ComfyUI application, server, API, execution, nodes, extras, middleware, assets, model directories, and application tests | changed by us | Removed because this repository distributes the inference library only |
-| `app/comfy_api_env.py`, `app/deploy_environment.py` (formerly `comfy/`), `tests-unit/deploy_environment_test.py` | changed by us | Retains both environment modules under `dinkster_inference/` and the existing library imports in deployment tests; no `app` package is shipped, and the upstream relocation changes no runtime behavior; the deployment location comment describes the library layout |
-| `comfy_api_nodes/util/_helpers.py`, `server.py`, `tests-unit/feature_flags_test.py` | omitted upstream | Environment import relocation is application-only; API helpers, the server and feature-flag application tests are not shipped |
-| `comfy_extras/nodes_fibo2.py` negative prompt handling | omitted upstream | Fibo2 T2I negative-prompt node handling is application-only; retains the corresponding Fibo2 NTK-aware RoPE library implementation |
-| `dinkster_inference/anonymous_file.py`, writable tensor backing in `memory_management.py`, `utils.py`, `ops.py`, `pinned_memory.py`, `model_prefetch.py`, `model_patcher.py`, `model_base.py`, `conds.py`, `samplers.py`, and QwenImage21/Wan cache models | kept upstream | Retains execution-scoped dynamic VRAM KV cache backing, admission, writeback and cleanup while preserving patch-program/training/window integration and manager-owned pin accounting; comfy-aimdo 0.6.0 was already pinned in requirements and wheel metadata |
-| `tests-unit/comfy_test/anonymous_file_test.py`, `qwen21_cache_admission_test.py`, `tensor_file_test.py`, `writable_weights_cuda.py` | kept upstream | Retains upstream backing-file, admission and writable-cache coverage through package import rewriting; spells the Unicode path fixture using ASCII escapes without changing the tested path |
-| `tests-unit/comfy_test/qwen21_cache_admission_test.py`, `model_management_test.py` fixtures | changed by us | Replaces the owning manager's pin eviction method in the admission test and declares the existing pin-reuse fixture non-writable; retains upstream admission expectations and the fork's copy-fencing assertions |
-| `dinkster_inference/model_patcher.py` writable cache ownership, `tests-unit/comfy_test/test_patch_program.py` | changed by us | Registers writable cache patchers only for the active execution, outside the persistent patch program; preserves multigpu resource identity and training settings, excludes active caches from clones, and releases cache references on normal and exceptional exit |
-| `comfy_api_nodes/apis/bria.py`, `apis/ideogram.py`, `apis/meshy.py`, `nodes_bria.py`, `nodes_heygen.py`, `nodes_ideogram.py`, `nodes_meshy.py`, `nodes_pixverse.py` under `comfy_api_nodes/` | omitted upstream | Partner-node commits `dc0486a538d3ba09ab5f80581106a1c2bd02e2ba` (Meshy), `acf5a145b549906134ae3b448c72d9f6bf22c38b` (PixVerse), `ad0a80e0c9c9ba0fa5ec4fed443bb90e6d045a8b` (Bria), and `baa9c563c3c749ac85dead76bd09695684b2150b` (Ideogram) affect only the omitted API node application |
-| `comfy_extras/nodes_flux.py`, `comfy_extras/nodes_moss_image.py`, `comfy_extras/nodes_textgen.py` | omitted upstream | MOSS edit reference nodes and adaptive-tree text generation controls are application-only; retains their MOSS reference/LoRA and Qwen adaptive-tree library implementations |
-| `dinkster_inference/model_management.py` offload synchronization, `dinkster_inference/pinned_memory.py` pin reuse | changed by us | Synchronizes all offload streams before reusing a victim pin, iterating the owning ModelManager's streams instead of upstream global STREAMS; preserves manager-owned pin accounting |
-| `dinkster_inference/text_encoders/qwen35.py` deferred control metadata | kept upstream | Adaptive-tree preparation writes the current tree program and accepted slots before every copy, replacing fixed-chain initialization for Kitchen 0.2.40; both dependency files already pin that release, and aimdo remains 0.6.0 |
-| `comfy_api_nodes/apis/krea.py`, `comfy_api_nodes/apis/mirelo.py`, `comfy_api_nodes/apis/veed.py`, `comfy_api_nodes/nodes_bria.py`, `comfy_api_nodes/nodes_heygen.py`, `comfy_api_nodes/nodes_krea.py`, `comfy_api_nodes/nodes_mirelo.py`, `comfy_api_nodes/nodes_veed.py`, `comfy_api_nodes/util/__init__.py`, `comfy_api_nodes/util/conversions.py` | omitted upstream | HeyGen pricing, Krea thinking mode, Mirelo and VEED partner nodes, and their Bria/shared utilities are application-only; API nodes are not shipped |
-| Upstream `AGENTS.md` model integration and V3 node guidance | omitted upstream | Retains the fork's existing engineering guidance; upstream loader, model-packaging and application-node policy is not an inference-library change |
-| `dinkster_inference/text_encoders/gemma4.py` Gemma4 31B global attention | kept upstream | Retains four global KV heads and shared key/value projection through the package import rewrite |
-| `app/agent_host.py`, `agent_requirements.txt`, `main.py`, `server.py`, `tests-unit/app_test/agent_host_test.py`, upstream `comfy/cli_args.py` agent flag | omitted upstream | The optional local agent host, comfy-agent dependency, startup/server integration and host tests are application-only; omits `--enable-agent` from `dinkster_inference/cli_args.py` because no shipped host consumes it |
-| `comfy_extras/nodes_images.py`, `tests-unit/comfy_extras_test/pad_image_test.py` | omitted upstream | Mirror padding and pad-to-multiple image nodes and their application tests are ledger-only because image-node applications are not shipped |
-| `dinkster_inference/ldm/fibo2/model.py`, `dinkster_inference/text_encoders/fibo2.py`, Fibo2 additions in `model_base.py`, `model_detection.py`, `sd.py`, and `supported_models.py` | kept upstream | Retains Fibo 2.0 diffusion, text encoding, detection, and loading through the package import rewrite; applies only the upstream additions to preserve the fork's model and loading seams |
-| `nodes.py`, `comfy_extras/nodes_fibo2.py` | omitted upstream | Fibo 2.0 application node registration and reference-conditioning nodes are ledger-only because the library does not ship the node application; the corresponding inference and text-encoder support is retained |
-| Upstream `README.md`, `comfy_api_nodes/apis/bfl.py`, `comfy_api_nodes/apis/bria.py`, `comfy_api_nodes/nodes_bfl.py`, `comfy_api_nodes/nodes_bria.py` | omitted upstream | The MOSS-image support announcement, FLUX 3 Max partner nodes, and FIBO 2.0 partner nodes are ledger-only; the fork retains its own README and does not ship API application nodes |
-| `comfy_api_nodes/apis/clarityai.py`, `comfy_api_nodes/nodes_clarityai.py`, `comfy_api_nodes/nodes_bfl.py`, `comfy_extras/nodes_moss_image.py` | omitted upstream | ClarityAI partner nodes, BFL node changes, and MOSS-image color-depth application nodes are ledger-only; the corresponding library control adapter support is retained |
-| `comfy_api_nodes/apis/heygen.py`, `comfy_api_nodes/nodes_heygen.py` | omitted upstream | HeyGen partner nodes are ledger-only because API application nodes are not shipped |
-| `comfy_api/feature_flags.py`, `comfy_api_nodes/nodes_sonilo.py`, `comfy_api_nodes/util/_helpers.py`, `comfy_api_nodes/util/client.py`, `comfy_api_nodes/util/download_helpers.py`, `tests-unit/comfy_api_nodes_test/partner_node_token_test.py`, `tests-unit/feature_flags_test.py` | omitted upstream | Partner-node sign-in token renewal is ledger-only because these API application paths and tests are not shipped |
-| `comfy_extras/nodes_textgen.py` | omitted upstream | TextGenerate node controls are application-only; retains the corresponding Qwen think-block template fixes in the library text encoders |
-| `comfy_extras/mesh3d/postprocess/qem_decimate.py` | omitted upstream | Mesh simplification refactoring is application-only; the mesh postprocessing subsystem is not shipped |
-| `comfy_extras/mesh3d/postprocess/remesh.py` | omitted upstream | Mesh remeshing refactoring and the solid-mode empty-mesh fix are application-only; the mesh postprocessing subsystem is not shipped |
-| `comfy_extras/nodes_mesh_postprocess.py` | omitted upstream | Mesh postprocessing node changes are application-only; retains the corresponding Trellis2 sparse RoPE layout fix in the library |
-| `docs/ledger.md` and `README.md` | ours only | Documents package use, provenance, and maintained differences |
+The library is upstream `comfy/` under the mechanical `dinkster_inference`
+import rename. `node_helpers.py` is packaged from the same revision because
+upstream `hooks.py` imports it. The `comfy` package aliases the installed library.
+
+Omitted application paths: ComfyUI's server, application, nodes, extras,
+execution, middleware, frontend, assets, API and model directories, and tests
+outside `tests-unit/comfy_test/` and `tests-unit/comfy_quant/`.
+
+The following upstream tests within those two directories are omitted because
+they import application modules not distributed by this library:
+
+| Path under `tests-unit/comfy_test/` | Application imports |
+| --- | --- |
+| `folder_path_test.py` | `folder_paths` |
+| `image_invert_test.py` | `nodes` |
+| `test_seedvr2_model.py` | `nodes` |
+| `test_seedvr2_vae_decode.py` | `comfy_extras.nodes_seedvr` |
+| `test_sensenova.py` | `nodes`, `comfy_extras.nodes_hidream_o1`, `comfy_extras.nodes_sensenova` |
+| `test_vae_decode_tiled_nested.py` | `nodes` |

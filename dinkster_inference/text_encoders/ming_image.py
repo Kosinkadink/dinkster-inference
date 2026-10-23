@@ -294,7 +294,7 @@ class MingTokenizer(sd1_clip.SDTokenizer):
 class MingImageTokenizer(sd1_clip.SD1Tokenizer):
     def __init__(self, embedding_directory=None, tokenizer_data={}):
         super().__init__(embedding_directory=embedding_directory, tokenizer_data=tokenizer_data, name="ming_image", tokenizer=MingTokenizer)
-        self.llama_template = "<role>SYSTEM</role>\u4f60\u662f\u4e00\u4e2a\u53cb\u597d\u7684AI\u52a9\u624b\u3002\n\ndetailed thinking off<|role_end|><role>HUMAN</role>{}<|role_end|><role>ASSISTANT</role>" + IMAGE_BLOCK
+        self.llama_template = '<role>SYSTEM</role>\u4f60\u662f\u4e00\u4e2a\u53cb\u597d\u7684AI\u52a9\u624b\u3002\n\ndetailed thinking off<|role_end|><role>HUMAN</role>{}<|role_end|><role>ASSISTANT</role>' + IMAGE_BLOCK
 
     def tokenize_with_weights(self, text, return_word_ids=False, llama_template=None, images=[], **kwargs):
         if llama_template is None:

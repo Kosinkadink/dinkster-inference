@@ -68,11 +68,7 @@ class MHRHead(nn.Module):
             self.register_buffer("face_region_rgb", torch.empty(18439, 3, dtype=torch.float32, device=device))
 
     def canonical_vertices(self):
-        """Return the T-pose vertices for the mean shape (scaled to meters).
-
-        Runs MHR with zero pose / shape / scale / expression so the returned
-        mesh is the canonical rest pose — fixed per-model
-        """
+        'Return the T-pose vertices for the mean shape (scaled to meters).\n\n        Runs MHR with zero pose / shape / scale / expression so the returned\n        mesh is the canonical rest pose \u2014 fixed per-model\n        '
         device = self.scale_mean.device
         dtype = self.scale_mean.dtype
         B = 1
@@ -96,7 +92,7 @@ class MHRHead(nn.Module):
         return verts[0]
 
     def faces_np(self):
-        """Static topology — cached so the per-layer pose_output doesn't force a D2H sync."""
+        "Static topology \u2014 cached so the per-layer pose_output doesn't force a D2H sync."
         if self._faces_np is None:
             self._faces_np = self.faces.cpu().numpy()
         return self._faces_np
@@ -245,16 +241,7 @@ class MHRHead(nn.Module):
             return tuple(to_return)
 
     def forward(self, x: torch.Tensor, init_estimate: Optional[torch.Tensor] = None, intermediate: bool = False):
-        """
-        Args:
-            x: pose token with shape [B, C], usually C=DECODER.DIM
-            init_estimate: [B, self.npose]
-            intermediate: when True, the caller only needs the keypoints/pose
-                outputs needed by the per-layer keypoint-token update path —
-                vertex output is suppressed so `camera_project` skips the
-                18439-vertex perspective projection on intermediate decoder
-                layers. The final layer must call with intermediate=False.
-        """
+        '\n        Args:\n            x: pose token with shape [B, C], usually C=DECODER.DIM\n            init_estimate: [B, self.npose]\n            intermediate: when True, the caller only needs the keypoints/pose\n                outputs needed by the per-layer keypoint-token update path \u2014\n                vertex output is suppressed so `camera_project` skips the\n                18439-vertex perspective projection on intermediate decoder\n                layers. The final layer must call with intermediate=False.\n        '
         batch_size = x.shape[0]
         pred = self.proj(x)
         if init_estimate is not None:

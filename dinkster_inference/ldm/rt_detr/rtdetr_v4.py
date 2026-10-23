@@ -26,7 +26,7 @@ COCO_CLASSES = [
 # ---------------------------------------------------------------------------
 
 class ConvBNAct(nn.Module):
-    """Conv→BN→ReLU.  padding='same' adds asymmetric zero-pad (stem)."""
+    "Conv\u2192BN\u2192ReLU.  padding='same' adds asymmetric zero-pad (stem)."
     def __init__(self, ic, oc, k=3, s=1, groups=1, use_act=True, device=None, dtype=None, operations=None):
         super().__init__()
 
@@ -137,11 +137,11 @@ class HGNetv2(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# Encoder — HybridEncoder  (dfine version: RepNCSPELAN4 + SCDown PAN)
+# Encoder \u2014 HybridEncoder  (dfine version: RepNCSPELAN4 + SCDown PAN)
 # ---------------------------------------------------------------------------
 
 class ConvNormLayer(nn.Module):
-    """Conv→act (expects pre-fused BN weights)."""
+    'Conv\u2192act (expects pre-fused BN weights).'
     def __init__(self, ic, oc, k, s, g=1, padding=None, act=None, device=None, dtype=None, operations=None):
         super().__init__()
         p = (k - 1) // 2 if padding is None else padding
@@ -177,7 +177,7 @@ class CSPLayer(nn.Module):
 
 
 class RepNCSPELAN4(nn.Module):
-    """CSP-ELAN block — the FPN/PAN block in RTv4's HybridEncoder."""
+    "CSP-ELAN block \u2014 the FPN/PAN block in RTv4's HybridEncoder."
     def __init__(self, c1, c2, c3, c4, n=3, act='silu', device=None, dtype=None, operations=None):
         super().__init__()
         self.c = c3 // 2
@@ -274,7 +274,7 @@ class HybridEncoder(nn.Module):
             for ch in in_channels
         ])
 
-        # AIFI transformer — use _TransformerEncoder so keys are  encoder.0.layers.N.*
+        # AIFI transformer \u2014 use _TransformerEncoder so keys are  encoder.0.layers.N.*
         self.encoder = nn.ModuleList([
             _TransformerEncoder(num_encoder_layers, hidden_dim, nhead, dim_feedforward, device=device, dtype=dtype, operations=operations)
             for _ in range(len(use_encoder_idx))
@@ -291,7 +291,7 @@ class HybridEncoder(nn.Module):
             [RepNCSPELAN4(hidden_dim * 2, hidden_dim, hidden_dim * 2, round(exp * hidden_dim // 2), nb, act=act, device=device, dtype=dtype, operations=operations)
              for _ in range(len(in_channels) - 1)])
 
-        # bottom-up PAN  (dfine: nn.Sequential(SCDown) — keeps checkpoint key  .0.cv1/.0.cv2)
+        # bottom-up PAN  (dfine: nn.Sequential(SCDown) \u2014 keeps checkpoint key  .0.cv1/.0.cv2)
         self.downsample_convs = nn.ModuleList(
             [nn.Sequential(SCDown(hidden_dim, hidden_dim, 3, 2, device=device, dtype=dtype, operations=operations))
              for _ in range(len(in_channels) - 1)])
@@ -348,7 +348,7 @@ class HybridEncoder(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# Decoder — DFINETransformer
+# Decoder \u2014 DFINETransformer
 # ---------------------------------------------------------------------------
 
 def _deformable_attn_v2(value: list, spatial_shapes, sampling_locations: torch.Tensor, attention_weights: torch.Tensor, num_points_list: List[int]) -> torch.Tensor:
@@ -469,7 +469,7 @@ def weighting_function(reg_max, up, reg_scale):
 
 
 def distance2bbox(points, distance, reg_scale):
-    """Decode edge-distances → cxcywh boxes."""
+    'Decode edge-distances \u2192 cxcywh boxes.'
     rs = abs(reg_scale).to(dtype=points.dtype)
     x1 = points[..., 0] - (0.5 * rs + distance[..., 0]) * (points[..., 2] / rs)
     y1 = points[..., 1] - (0.5 * rs + distance[..., 1]) * (points[..., 3] / rs)
@@ -480,7 +480,7 @@ def distance2bbox(points, distance, reg_scale):
 
 
 class Integral(nn.Module):
-    """Sum Pr(n)·W(n) over the distribution bins."""
+    'Sum Pr(n)\xb7W(n) over the distribution bins.'
     def __init__(self, reg_max=32):
         super().__init__()
         self.reg_max = reg_max
@@ -493,7 +493,7 @@ class Integral(nn.Module):
 
 
 class LQE(nn.Module):
-    """Location Quality Estimator — refines class scores using corner distribution."""
+    'Location Quality Estimator \u2014 refines class scores using corner distribution.'
     def __init__(self, k=4, hidden_dim=64, num_layers=2, reg_max=32, device=None, dtype=None, operations=None):
         super().__init__()
         self.k, self.reg_max = k, reg_max
@@ -527,7 +527,7 @@ class TransformerDecoder(nn.Module):
         c = self.hidden_dim // self.nhead
         split = [h * w for h, w in spatial_shapes]
         val = memory.reshape(memory.shape[0], memory.shape[1], self.nhead, c) # memory: [bs, sum(h*w), hidden_dim]
-        # → [bs, n_head, c, sum_hw]
+        # \u2192 [bs, n_head, c, sum_hw]
         val = val.permute(0, 2, 3, 1).flatten(0, 1)  # [bs*n_head, c, sum_hw]
         return val.split(split, dim=-1)  # list of [bs*n_head, c, h_l*w_l]
 

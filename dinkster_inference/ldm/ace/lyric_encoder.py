@@ -655,27 +655,7 @@ class ConformerEncoderLayer(nn.Module):
         att_cache: torch.Tensor = torch.zeros((0, 0, 0, 0)),
         cnn_cache: torch.Tensor = torch.zeros((0, 0, 0, 0)),
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Compute encoded features.
-
-        Args:
-            x (torch.Tensor): (#batch, time, size)
-            mask (torch.Tensor): Mask tensor for the input (#batch, time，time),
-                (0, 0, 0) means fake mask.
-            pos_emb (torch.Tensor): positional encoding, must not be None
-                for ConformerEncoderLayer.
-            mask_pad (torch.Tensor): batch padding mask used for conv module.
-                (#batch, 1，time), (0, 0, 0) means fake mask.
-            att_cache (torch.Tensor): Cache tensor of the KEY & VALUE
-                (#batch=1, head, cache_t1, d_k * 2), head * d_k == size.
-            cnn_cache (torch.Tensor): Convolution cache in conformer layer
-                (#batch=1, size, cache_t2)
-        Returns:
-            torch.Tensor: Output tensor (#batch, time, size).
-            torch.Tensor: Mask tensor (#batch, time, time).
-            torch.Tensor: att_cache tensor,
-                (#batch=1, head, cache_t1 + time, d_k * 2).
-            torch.Tensor: cnn_cahce tensor (#batch, size, cache_t2).
-        """
+        'Compute encoded features.\n\n        Args:\n            x (torch.Tensor): (#batch, time, size)\n            mask (torch.Tensor): Mask tensor for the input (#batch, time\uff0ctime),\n                (0, 0, 0) means fake mask.\n            pos_emb (torch.Tensor): positional encoding, must not be None\n                for ConformerEncoderLayer.\n            mask_pad (torch.Tensor): batch padding mask used for conv module.\n                (#batch, 1\uff0ctime), (0, 0, 0) means fake mask.\n            att_cache (torch.Tensor): Cache tensor of the KEY & VALUE\n                (#batch=1, head, cache_t1, d_k * 2), head * d_k == size.\n            cnn_cache (torch.Tensor): Convolution cache in conformer layer\n                (#batch=1, size, cache_t2)\n        Returns:\n            torch.Tensor: Output tensor (#batch, time, size).\n            torch.Tensor: Mask tensor (#batch, time, time).\n            torch.Tensor: att_cache tensor,\n                (#batch=1, head, cache_t1 + time, d_k * 2).\n            torch.Tensor: cnn_cahce tensor (#batch, size, cache_t2).\n        '
 
         # whether to use macaron style
         if self.feed_forward_macaron is not None:
@@ -781,7 +761,7 @@ class EspnetRelPositionalEncoding(torch.nn.Module):
         pe = torch.cat([pe_positive, pe_negative], dim=1)
         self.pe = pe.to(device=x.device, dtype=x.dtype)
 
-    def forward(self, x: torch.Tensor, offset: Union[int, torch.Tensor] = 0) \
+    def forward(self, x: torch.Tensor, offset: Union[int, torch.Tensor] = 0)\
             -> Tuple[torch.Tensor, torch.Tensor]:
         """Add positional encoding.
 

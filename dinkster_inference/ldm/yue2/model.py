@@ -1,4 +1,4 @@
-"""YuE2 acoustic transformer. Adapted from M·A·P YuE2 (Apache-2.0)."""
+'YuE2 acoustic transformer. Adapted from M\xb7A\xb7P YuE2 (Apache-2.0).'
 
 import torch
 from torch import nn

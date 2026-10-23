@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import io
 import re
+import tokenize
 from pathlib import Path
 
 
@@ -17,6 +20,16 @@ def rewrite(path: Path) -> bool:
     updated = original
     for pattern, replacement in REWRITES:
         updated = pattern.sub(replacement, updated)
+    tokens = []
+    for token in tokenize.generate_tokens(io.StringIO(updated).readline):
+        if not token.string.isascii():
+            if token.type == tokenize.STRING:
+                value = ascii(ast.literal_eval(token.string))
+            else:
+                value = token.string.encode("ascii", "backslashreplace").decode("ascii")
+            token = token._replace(string=value)
+        tokens.append(token)
+    updated = tokenize.untokenize(tokens)
     if updated == original:
         return False
     path.write_text(updated)

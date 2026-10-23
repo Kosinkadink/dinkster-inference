@@ -17,12 +17,10 @@ import dinkster_inference.sampler_helpers
 import dinkster_inference.model_patcher
 import dinkster_inference.patcher_extension
 import dinkster_inference.hooks
-import dinkster_inference.window_execution
+import dinkster_inference.context_windows
 import dinkster_inference.multigpu
 import dinkster_inference.utils
-from dinkster_inference.contribution_gain import ContributionGain, GainTimeline
 from dinkster_inference.internal_logging import detail
-from dinkster_inference.res4lyf_sampler import RES4LYF_SAMPLER_NAMES, sampler_function as res4lyf_sampler_function
 import scipy.stats
 import numpy
 
@@ -35,19 +33,24 @@ def add_area_dims(area, num_dims):
 def get_area_and_mult(conds, x_in, timestep_in):
     dims = tuple(x_in.shape[2:])
     area = None
-    gain_table = conds.get("realized_contribution_gain")
-    strength = 1.0 if gain_table is None else gain_table.scalar_gain(
-        timestep_in,
-        site="conditioning",
-        lane=conds.get("guidance_lane"),
-    )
-    if strength == 0.0:
-        return None
+    strength = 1.0
+
+    if 'timestep_start' in conds:
+        timestep_start = conds['timestep_start']
+        if timestep_in[0] > timestep_start:
+            return None
+    if 'timestep_end' in conds:
+        timestep_end = conds['timestep_end']
+        if timestep_in[0] < timestep_end:
+            return None
     if 'area' in conds:
         area = list(conds['area'])
         area = add_area_dims(area, len(dims))
         if (len(area) // 2) > len(dims):
             area = area[:len(dims)] + area[len(area) // 2:(len(area) // 2) + len(dims)]
+
+    if 'strength' in conds:
+        strength = conds['strength']
 
     input_x = x_in
     if area is not None:
@@ -58,12 +61,10 @@ def get_area_and_mult(conds, x_in, timestep_in):
     if 'mask' in conds:
         # Scale the mask to the size of the input
         # The mask should have been resized as we began the sampling process
-        masks = conds.get("window_effect_masks")
-        if masks is None:
-            masks = gain_table.effect_masks if gain_table is not None and gain_table.effect_masks else (conds['mask'],)
-        mask = masks[0]
-        for effect_mask in masks[1:]:
-            mask = mask * effect_mask
+        mask_strength = 1.0
+        if "mask_strength" in conds:
+            mask_strength = conds["mask_strength"]
+        mask = conds['mask']
         # assert (mask.shape[1:] == x_in.shape[2:])
 
         mask = mask[:input_x.shape[0]]
@@ -71,6 +72,7 @@ def get_area_and_mult(conds, x_in, timestep_in):
             for i in range(len(dims)):
                 mask = mask.narrow(i + 1, area[len(dims) + i], area[i])
 
+        mask = mask * mask_strength
         mask = mask.unsqueeze(1).repeat((input_x.shape[0] // mask.shape[0], input_x.shape[1]) + (1, ) * (mask.ndim - 1))
     else:
         mask = torch.ones_like(input_x)
@@ -204,12 +206,10 @@ def finalize_default_conds(model: 'BaseModel', hooked_to_run: dict[dinkster_infe
             hooked_to_run[p.hooks] += [(p, i)]
 
 def calc_cond_batch(model: BaseModel, conds: list[list[dict]], x_in: torch.Tensor, timestep, model_options: dict[str]):
-    window_plan = model_options.get("window_plan")
-    if window_plan is None:
+    handler: dinkster_inference.context_windows.ContextHandlerABC = model_options.get("context_handler", None)
+    if handler is None or not handler.should_use_context(model, conds, x_in, timestep, model_options):
         return _calc_cond_batch_outer(model, conds, x_in, timestep, model_options)
-    if type(window_plan) is not dinkster_inference.window_execution.WindowPlanExecutor:
-        raise TypeError("model_options['window_plan'] must be a WindowPlanExecutor")
-    return window_plan.execute(_calc_cond_batch_outer, model, conds, x_in, timestep, model_options)
+    return handler.execute(_calc_cond_batch_outer, model, conds, x_in, timestep, model_options)
 
 def _calc_cond_batch_outer(model: BaseModel, conds: list[list[dict]], x_in: torch.Tensor, timestep, model_options):
     executor = dinkster_inference.patcher_extension.WrapperExecutor.new_executor(
@@ -780,19 +780,16 @@ def resolve_areas_and_cond_masks_multidim(conditions, dims, device):
                 conditions[i] = c
 
         if 'mask' in c:
+            mask = c['mask']
+            mask = mask.to(device=device)
             modified = c.copy()
-            effect_masks = []
-            for mask in c.get("effect_masks", (c['mask'],)):
-                mask = mask.to(device=device)
-                if len(mask.shape) == len(dims):
-                    mask = mask.unsqueeze(0)
-                if mask.shape[1:] != dims:
-                    if mask.ndim < 4:
-                        mask = dinkster_inference.utils.common_upscale(mask.unsqueeze(1), dims[-1], dims[-2], 'bilinear', 'none').squeeze(1)
-                    else:
-                        mask = dinkster_inference.utils.common_upscale(mask, dims[-1], dims[-2], 'bilinear', 'none')
-                effect_masks.append(mask)
-            mask = effect_masks[0]
+            if len(mask.shape) == len(dims):
+                mask = mask.unsqueeze(0)
+            if mask.shape[1:] != dims:
+                if mask.ndim < 4:
+                    mask = dinkster_inference.utils.common_upscale(mask.unsqueeze(1), dims[-1], dims[-2], 'bilinear', 'none').squeeze(1)
+                else:
+                    mask = dinkster_inference.utils.common_upscale(mask, dims[-1], dims[-2], 'bilinear', 'none')
 
             if modified.get("set_area_to_bounds", False): #TODO: handle dim != 2
                 bounds = torch.max(torch.abs(mask),dim=0).values.unsqueeze(0)
@@ -809,7 +806,6 @@ def resolve_areas_and_cond_masks_multidim(conditions, dims, device):
                     modified['area'] = area
 
             modified['mask'] = mask
-            modified['effect_masks'] = tuple(effect_masks)
             conditions[i] = modified
 
 def resolve_areas_and_cond_masks(conditions, h, w, device):
@@ -859,6 +855,31 @@ def create_cond_with_same_area_if_none(conds, c):
     out = c.copy()
     out['model_conds'] = smallest['model_conds'].copy() #TODO: which fields should be copied?
     conds += [out]
+
+def calculate_start_end_timesteps(model, conds):
+    s = model.model_sampling
+    for t in range(len(conds)):
+        x = conds[t]
+
+        timestep_start = None
+        timestep_end = None
+        # handle clip hook schedule, if needed
+        if 'clip_start_percent' in x:
+            timestep_start = s.percent_to_sigma(max(x['clip_start_percent'], x.get('start_percent', 0.0)))
+            timestep_end = s.percent_to_sigma(min(x['clip_end_percent'], x.get('end_percent', 1.0)))
+        else:
+            if 'start_percent' in x:
+                timestep_start = s.percent_to_sigma(x['start_percent'])
+            if 'end_percent' in x:
+                timestep_end = s.percent_to_sigma(x['end_percent'])
+
+        if (timestep_start is not None) or (timestep_end is not None):
+            n = x.copy()
+            if (timestep_start is not None):
+                n['timestep_start'] = timestep_start
+            if (timestep_end is not None):
+                n['timestep_end'] = timestep_end
+            conds[t] = n
 
 def pre_run_control(model, conds):
     s = model.model_sampling
@@ -951,7 +972,7 @@ KSAMPLER_NAMES = ["euler", "euler_cfg_pp", "euler_ancestral", "euler_ancestral_c
                   "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_2s_ancestral_cfg_pp", "dpmpp_sde", "dpmpp_sde_gpu",
                   "dpmpp_2m", "dpmpp_2m_cfg_pp", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_2m_sde_heun", "dpmpp_2m_sde_heun_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm",
                   "ipndm", "ipndm_v", "deis", "cfgpp_ud10_ab", "res_multistep", "res_multistep_cfg_pp", "res_multistep_ancestral", "res_multistep_ancestral_cfg_pp",
-                  "gradient_estimation", "gradient_estimation_cfg_pp", "er_sde", "seeds_2", "seeds_3", "sa_solver", "sa_solver_pece", *RES4LYF_SAMPLER_NAMES]
+                  "gradient_estimation", "gradient_estimation_cfg_pp", "er_sde", "seeds_2", "seeds_3", "sa_solver", "sa_solver_pece"]
 
 class KSAMPLER(Sampler):
     def __init__(self, sampler_function, extra_options={}, inpaint_options={}):
@@ -1015,12 +1036,12 @@ def ksampler(sampler_name, extra_options={}, inpaint_options={}):
 
 
 def process_conds(model, noise, conds, device, latent_image=None, denoise_mask=None, seed=None, latent_shapes=None):
-    mask_dimensions = noise.shape[2:]
-    if latent_shapes is not None and len(latent_shapes) > 1:
-        mask_dimensions = latent_shapes[0][2:]
     for k in conds:
         conds[k] = conds[k][:]
-        resolve_areas_and_cond_masks_multidim(conds[k], mask_dimensions, device)
+        resolve_areas_and_cond_masks_multidim(conds[k], noise.shape[2:], device)
+
+    for k in conds:
+        calculate_start_end_timesteps(model, conds[k])
 
     if hasattr(model, 'extra_conds'):
         for k in conds:
@@ -1050,56 +1071,6 @@ def process_conds(model, noise, conds, device, latent_image=None, denoise_mask=N
                 apply_empty_x_to_equal_area(positive, conds[k], 'gligen', lambda cond_cnets, x: cond_cnets[x])
 
     return conds
-
-
-def realize_contribution_gains(model, conds, sigmas):
-    controls = set()
-    for lane, conditioning in conds.items():
-        for metadata in conditioning:
-            gain = metadata.pop("contribution_gain", ContributionGain())
-            gain = gain.scaled(metadata.pop("strength", 1.0))
-            gain = gain.scaled(metadata.pop("mask_strength", 1.0))
-            start = metadata.pop("start_percent", 0.0)
-            end = metadata.pop("end_percent", 1.0)
-            if "clip_start_percent" in metadata:
-                start = max(start, metadata["clip_start_percent"])
-                end = min(end, metadata["clip_end_percent"])
-            if start != 0.0 or end != 1.0:
-                gain = gain.with_timeline(GainTimeline.active_range(start, end))
-            effect_masks = metadata.pop("effect_masks", ())
-            if effect_masks:
-                gain = gain.with_effect_masks(effect_masks)
-            realized_gain = gain.realize(
-                sigmas, model.model_sampling.percent_to_sigma
-            )
-            metadata["realized_contribution_gain"] = realized_gain
-            if realized_gain.lane_gains:
-                metadata["guidance_lane"] = lane
-            else:
-                metadata.pop("guidance_lane", None)
-            control = metadata.get("control")
-            if control is not None and id(control) not in controls:
-                control.realize_gain(sigmas, model)
-                controls.add(id(control))
-            hooks = metadata.get("hooks")
-            if hooks is None:
-                continue
-            for hook in hooks.hooks:
-                hook.realize_gain(sigmas, model)
-
-
-def compile_window_masks(conds, window_plan):
-    for conditioning in conds.values():
-        for metadata in conditioning:
-            mask = metadata.get("mask")
-            if mask is None:
-                continue
-            metadata["mask"] = window_plan.compile_mask(mask)
-            gain = metadata.get("realized_contribution_gain")
-            if gain is not None and gain.effect_masks:
-                metadata["window_effect_masks"] = tuple(
-                    window_plan.compile_mask(effect_mask) for effect_mask in gain.effect_masks
-                )
 
 
 def preprocess_conds_hooks(conds: dict[str, list[dict[str]]]):
@@ -1229,6 +1200,8 @@ class CFGGuider:
 
     def inner_set_conds(self, conds):
         for k in conds:
+            if self.model_patcher.is_dynamic() and dinkster_inference.sampler_helpers.cond_has_hooks(conds[k]):
+                self.model_patcher = self.model_patcher.get_non_dynamic_delegate()
             self.original_conds[k] = dinkster_inference.sampler_helpers.convert_cond(conds[k])
 
     def __call__(self, *args, **kwargs):
@@ -1251,13 +1224,6 @@ class CFGGuider:
             latent_image = self.inner_model.process_latent_in(latent_image)
 
         self.conds = process_conds(self.inner_model, noise, self.conds, device, latent_image, denoise_mask, seed, latent_shapes=latent_shapes)
-        realize_contribution_gains(self.inner_model, self.conds, sigmas)
-
-        window_plan = self.model_options.get("window_plan")
-        if window_plan is not None:
-            if type(window_plan) is not dinkster_inference.window_execution.WindowPlanExecutor:
-                raise TypeError("model_options['window_plan'] must be a WindowPlanExecutor")
-            compile_window_masks(self.conds, window_plan)
 
         extra_model_options = dinkster_inference.model_patcher.create_model_options_clone(self.model_options)
         extra_model_options.setdefault("transformer_options", {})["sample_sigmas"] = sigmas
@@ -1420,15 +1386,13 @@ def calculate_sigmas(model_sampling: object, scheduler_name: str, steps: int) ->
         return handler.handler(model_sampling, steps)
     return handler.handler(n=steps, sigma_min=float(model_sampling.sigma_min), sigma_max=float(model_sampling.sigma_max))
 
-def sampler_object(name, options=None):
+def sampler_object(name):
     if name == "uni_pc":
         sampler = KSAMPLER(uni_pc.sample_unipc)
     elif name == "uni_pc_bh2":
         sampler = KSAMPLER(uni_pc.sample_unipc_bh2)
     elif name == "ddim":
         sampler = ksampler("euler", inpaint_options={"random": True})
-    elif name in RES4LYF_SAMPLER_NAMES:
-        sampler = KSAMPLER(res4lyf_sampler_function(name, options))
     else:
         sampler = ksampler(name)
     return sampler

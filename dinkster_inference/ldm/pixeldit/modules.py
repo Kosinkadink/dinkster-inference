@@ -122,12 +122,7 @@ class PixelTokenEmbedder(nn.Module):
 
 
 class PiTBlock(nn.Module):
-    """Pixel-level transformer block.
-
-    Compresses each patch's P^2 pixel tokens -> 1 attention token via a linear,
-    runs global self-attention across patches with 2D RoPE, then expands back to P^2 tokens.
-    Conditioning is per-pixel adaLN from the patch-level features.
-    """
+    "Pixel-level transformer block.\n\n    Compresses each patch's P^2 pixel tokens \u2192 1 attention token via a linear,\n    runs global self-attention across patches with 2D RoPE, then expands back to P^2 tokens.\n    Conditioning is per-pixel adaLN from the patch-level features.\n    "
     def __init__(self, pixel_hidden_size, patch_hidden_size, patch_size, num_heads, mlp_ratio=4.0,
                  attn_hidden_size=None, attn_num_heads=None, dtype=None, device=None, operations=None, mlp_chunks=1):
         super().__init__()

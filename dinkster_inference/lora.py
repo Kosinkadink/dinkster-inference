@@ -546,7 +546,7 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
                 weight.copy_(v[0])
         elif patch_type == "model_as_lora":
             target_weight: torch.Tensor = v[0]
-            diff_weight = dinkster_inference.model_management.cast_to_device(target_weight, weight.device, intermediate_dtype) - \
+            diff_weight = dinkster_inference.model_management.cast_to_device(target_weight, weight.device, intermediate_dtype) -\
                           dinkster_inference.model_management.cast_to_device(original_weights[key][0][0], weight.device, intermediate_dtype)
             weight += function(strength * dinkster_inference.model_management.cast_to_device(diff_weight, weight.device, weight.dtype))
         else:

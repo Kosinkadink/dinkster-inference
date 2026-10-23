@@ -46,11 +46,7 @@ class Snake(nn.Module):
         self.no_div_by_zero = 0.000000001
 
     def forward(self, x):
-        '''
-        Forward pass of the function.
-        Applies the function to the input elementwise.
-        Snake := x + 1/a * sin^2 (xa)
-        '''
+        '\n        Forward pass of the function.\n        Applies the function to the input elementwise.\n        Snake \u2236= x + 1/a * sin^2 (xa)\n        '
         alpha = dinkster_inference.model_management.cast_to(self.alpha, dtype=x.dtype, device=x.device).unsqueeze(0).unsqueeze(-1) # line up with x to [B, C, T]
         if self.alpha_logscale:
             alpha = torch.exp(alpha)
@@ -105,11 +101,7 @@ class SnakeBeta(nn.Module):
         self.no_div_by_zero = 0.000000001
 
     def forward(self, x):
-        '''
-        Forward pass of the function.
-        Applies the function to the input elementwise.
-        SnakeBeta := x + 1/b * sin^2 (xa)
-        '''
+        '\n        Forward pass of the function.\n        Applies the function to the input elementwise.\n        SnakeBeta \u2236= x + 1/b * sin^2 (xa)\n        '
         alpha = dinkster_inference.model_management.cast_to(self.alpha, dtype=x.dtype, device=x.device).unsqueeze(0).unsqueeze(-1) # line up with x to [B, C, T]
         beta = dinkster_inference.model_management.cast_to(self.beta, dtype=x.dtype, device=x.device).unsqueeze(0).unsqueeze(-1)
         if self.alpha_logscale:

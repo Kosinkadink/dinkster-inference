@@ -19,7 +19,7 @@ def render_splat(xyz, rgb, scale, opacity=None, yaw=35.0, pitch=30.0, size=320, 
                  max_px=9, min_opacity=0.0, fov=35.0, dist=2.2):
     # Project gaussian centers with a perspective camera and paint each as a filled disk whose screen
     # radius follows the gaussian's world-space scale, composited with a nearest-wins z-buffer.
-    # gain scales the footprint (≈ std spanned), `min_px`/`max_px` clamp the on-screen radius.
+    # gain scales the footprint (\u2248 std spanned), `min_px`/`max_px` clamp the on-screen radius.
 
     pts = xyz.astype(np.float32) @ _OBJECT_TO_VIEWER.T
     v = pts @ _view_matrix(yaw, pitch).T

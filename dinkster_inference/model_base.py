@@ -193,7 +193,6 @@ class BaseModel(torch.nn.Module):
                 logging.debug("using channels last mode for diffusion model")
             logging.info("model weight dtype {}, manual cast: {}".format(self.get_dtype(), self.manual_cast_dtype))
             dinkster_inference.model_management.archive_model_dtypes(self.diffusion_model)
-            self.patch_site_map = self._module_patch_sites()
 
         self.model_type = model_type
         self.model_sampling = model_sampling(model_config, model_type)
@@ -209,31 +208,6 @@ class BaseModel(torch.nn.Module):
         self.memory_usage_factor = model_config.memory_usage_factor
         self.memory_usage_factor_conds = ()
         self.memory_usage_shape_process = {}
-
-    def _module_patch_sites(self):
-        sites = {"model.root": {"path": "diffusion_model", "order": 0}}
-        order = 1
-        block_groups = (
-            ("down", "input_blocks"),
-            ("mid", "middle_block"),
-            ("up", "output_blocks"),
-        )
-        for prefix, attribute in block_groups:
-            blocks = getattr(self.diffusion_model, attribute, None)
-            if blocks is None:
-                continue
-            if prefix == "mid":
-                blocks = (blocks,)
-            for index, _ in enumerate(blocks):
-                path = f"diffusion_model.{attribute}"
-                if prefix != "mid":
-                    path = f"{path}.{index}"
-                sites[f"{prefix}.{index}"] = {
-                    "path": path,
-                    "order": order,
-                }
-                order += 1
-        return sites
 
     def apply_model(self, x, t, c_concat=None, c_crossattn=None, control=None, transformer_options={}, **kwargs):
         return dinkster_inference.patcher_extension.WrapperExecutor.new_class_executor(
@@ -280,15 +254,7 @@ class BaseModel(torch.nn.Module):
             self.current_patcher is not None and self.current_patcher.is_dynamic()
         )
 
-        previous_transformer_options = None
-        if self.current_patcher is not None:
-            previous_transformer_options = self.current_patcher.current_transformer_options
-            self.current_patcher.current_transformer_options = transformer_options
-        try:
-            model_output = self.diffusion_model(xc, t, context=context, control=control, transformer_options=transformer_options, **extra_conds)
-        finally:
-            if self.current_patcher is not None:
-                self.current_patcher.current_transformer_options = previous_transformer_options
+        model_output = self.diffusion_model(xc, t, context=context, control=control, transformer_options=transformer_options, **extra_conds)
         if len(model_output) > 1 and not torch.is_tensor(model_output):
             model_output, _ = utils.pack_latents(model_output)
 
@@ -1357,14 +1323,14 @@ class LTXAV(BaseModel):
         return None
 
     def resize_cond_for_context_window(self, cond_key, cond_value, window, x_in, device, retain_index_list=[]):
-        # Audio denoise mask - slice using audio modality window
+        # Audio denoise mask \u2014 slice using audio modality window
         if cond_key == "audio_denoise_mask" and hasattr(window, 'modality_windows') and window.modality_windows:
             audio_window = window.modality_windows.get(1)
             if audio_window is not None and hasattr(cond_value, "cond") and isinstance(cond_value.cond, torch.Tensor):
                 sliced = audio_window.get_tensor(cond_value.cond, device, dim=2)
                 return cond_value._copy_with(sliced)
 
-        # Video denoise mask - split into video + guide portions, slice each
+        # Video denoise mask \u2014 split into video + guide portions, slice each
         if cond_key == "denoise_mask" and hasattr(cond_value, "cond") and isinstance(cond_value.cond, torch.Tensor):
             cond_tensor = cond_value.cond
             guide_count = cond_tensor.size(window.dim) - x_in.size(window.dim)
@@ -1381,7 +1347,7 @@ class LTXAV(BaseModel):
                 else:
                     return cond_value._copy_with(sliced_video)
 
-        # Keyframe indices - regenerate pixel coords for window, select guide positions
+        # Keyframe indices \u2014 regenerate pixel coords for window, select guide positions
         if cond_key == "keyframe_idxs":
             kf_local_pos = window.guide_kf_local_positions
             if not kf_local_pos:
@@ -1424,7 +1390,7 @@ class LTXAV(BaseModel):
                 pixel_coords = pixel_coords.expand(B, -1, -1, -1)
             return cond_value._copy_with(pixel_coords)
 
-        # Guide attention entries - adjust per-guide counts based on window overlap
+        # Guide attention entries \u2014 adjust per-guide counts based on window overlap
         if cond_key == "guide_attention_entries":
             overlap_info = window.guide_overlap_info
             H, W = x_in.shape[3], x_in.shape[4]

@@ -20,19 +20,16 @@ from __future__ import annotations
 
 import collections
 import contextlib
-import functools
 import inspect
 import logging
 import math
 import time
 import uuid
 import weakref
-from types import MappingProxyType
 from typing import Callable, Optional
 
 import torch
 import tqdm
-from torch.utils.checkpoint import checkpoint
 
 import dinkster_inference.float
 import dinkster_inference.hooks
@@ -45,16 +42,9 @@ import dinkster_inference.utils
 import comfy_aimdo.host_buffer
 from dinkster_inference.comfy_types import UnetWrapperFunction
 from dinkster_inference.configurable import ConfigurableModule
-from dinkster_inference.contribution_gain import ContributionGain
 from dinkster_inference.internal_logging import detail
-from dinkster_inference.patch_program import ModuleInsertionEntry, PatchProgram
 from dinkster_inference.quant_ops import QuantizedTensor
 from dinkster_inference.patcher_extension import CallbacksMP, PatcherInjection, WrappersMP
-from dinkster_inference.weight_adapter.base import WeightAdapterBase, WeightAdapterTrainBase
-from dinkster_inference.weight_adapter.bypass import (
-    ScheduledBypassAdapter,
-    ScheduledBypassMaterializer,
-)
 
 import comfy_aimdo.model_vbar
 
@@ -185,10 +175,9 @@ def string_to_seed(data):
 class LowVramPatch:
     is_lowvram_patch = True
 
-    def __init__(self, key, patches, validate, convert_func=None, set_func=None):
+    def __init__(self, key, patches, convert_func=None, set_func=None):
         self.key = key
         self.patches = patches
-        self.validate = validate
         self.convert_func = convert_func # TODO: remove
         self.set_func = set_func
         self.prepared_patches = None
@@ -200,7 +189,6 @@ class LowVramPatch:
         return counter[0]
 
     def prepare(self, destination, stream, copy=True, commit=True):
-        self.validate(self.key)
         counter = [0]
         prepared_patches = [
             (patch[0], dinkster_inference.lora.prefetch_prepared_value(patch[1], counter, destination, stream, copy), patch[2], patch[3], patch[4])
@@ -214,62 +202,8 @@ class LowVramPatch:
         self.prepared_patches = None
 
     def __call__(self, weight):
-        if self.prepared_patches is None:
-            self.validate(self.key)
         patches = self.prepared_patches if self.prepared_patches is not None else self.patches[self.key]
         return dinkster_inference.lora.calculate_weight(patches, weight, self.key, intermediate_dtype=weight.dtype)
-
-
-class HookWeightPatch:
-    def __init__(self, patcher, key):
-        self.model = weakref.ref(patcher.model)
-        self.fallback_patcher = weakref.ref(patcher)
-        self.key = key
-
-    def __call__(self, weight):
-        model = self.model()
-        patcher = getattr(model, "current_patcher", None)
-        if patcher is None:
-            patcher = self.fallback_patcher()
-        if patcher is None or patcher.current_hooks is None:
-            return weight
-        patches = patcher.get_combined_hook_patches(patcher.current_hooks).get(self.key)
-        if not patches:
-            return weight
-        output_dtype = weight.dtype
-        intermediate_dtype = torch.float32
-        weight = dinkster_inference.model_management.cast_to_device(
-            weight,
-            weight.device,
-            intermediate_dtype,
-            copy=True,
-        )
-        weight = dinkster_inference.lora.calculate_weight(
-            patches,
-            weight,
-            self.key,
-            intermediate_dtype=intermediate_dtype,
-        )
-        return dinkster_inference.float.stochastic_rounding(
-            weight,
-            output_dtype,
-            seed=dinkster_inference.utils.string_to_seed(self.key),
-        )
-
-    def active(self):
-        model = self.model()
-        patcher = getattr(model, "current_patcher", None)
-        if patcher is None:
-            patcher = self.fallback_patcher()
-        if patcher is None or patcher.current_hooks is None:
-            return False
-        patches = patcher.get_combined_hook_patches(patcher.current_hooks).get(self.key, ())
-        for strength, value, strength_model, *_ in patches:
-            if not math.isclose(strength_model, 1.0) or not math.isclose(strength, 0.0):
-                return True
-            if isinstance(value, tuple) and len(value) == 2 and value[0] == "set":
-                return True
-        return False
 
 LOWVRAM_PATCH_ESTIMATE_MATH_FACTOR = 2
 
@@ -407,17 +341,6 @@ class LazyCastingParamPiece(torch.nn.Parameter):
         return caster.state_dict_tensor(self.state_dict_key)
 
 
-class _PatcherInjectionMaterializer:
-    def create_handle(self, patcher, site, entry, scratch):
-        return entry.resources.value
-
-    def materialize(self, patcher, injection):
-        injection.inject(patcher)
-
-    def teardown(self, patcher, injection):
-        injection.eject(patcher)
-
-
 class ModelPatcher:
     def __init__(self, model, load_device, offload_device, size=0, weight_inplace_update=False, fast_disk=False):
         self.size = size
@@ -429,51 +352,35 @@ class ModelPatcher:
         elif self.model.device is None:
             self.model.device = offload_device
 
-        self.model_options = {"transformer_options":{}}
-        self._set_patch_program(PatchProgram())
-        patch_site_map = {
-            "model.root": {"path": "", "order": 0},
-            **getattr(self.model, "patch_site_map", {}),
-        }
-        self.patch_site_map = MappingProxyType(patch_site_map)
-        self.patch_materializers = {}
-        self.register_patch_materializer(
-            "dinkster.patcher_injection", _PatcherInjectionMaterializer()
-        )
-        self.register_patch_materializer(
-            "dinkster.scheduled_bypass", ScheduledBypassMaterializer()
-        )
-        self._materialized_insertions = []
-        self._patch_scratch = {}
-        self._writable_model = None
+        self.patches = {}
         self.backup = {}
         self.backup_buffers = {}
+        self.object_patches = {}
         self.object_patches_backup = {}
-        self._training_forward_backup = []
         self.weight_wrapper_patches = {}
+        self.model_options = {"transformer_options":{}}
         self.load_device = load_device
         self.offload_device = offload_device
         self.weight_inplace_update = weight_inplace_update
         self.force_cast_weights = False
-        self.pin_offloaded_weights = True
         self.patches_uuid = uuid.uuid4()
         self.parent = None
         self.pinned = set()
 
         self.attachments: dict[str] = {}
+        self.additional_models: dict[str, list[ModelPatcher]] = {}
         self.callbacks: dict[str, dict[str, list[Callable]]] = CallbacksMP.init_callbacks()
         self.wrappers: dict[str, dict[str, list[Callable]]] = WrappersMP.init_wrappers()
 
         self.is_injected = False
         self.skip_injection = False
+        self.injections: dict[str, list[PatcherInjection]] = {}
 
         self.hook_patches: dict[dinkster_inference.hooks._HookRef] = {}
         self.hook_patches_backup: dict[dinkster_inference.hooks._HookRef] = None
         self.hook_backup: dict[str, tuple[torch.Tensor, torch.device]] = {}
         self.cached_hook_patches: dict[dinkster_inference.hooks.HookGroup, dict[str, torch.Tensor]] = {}
-        self.hook_weight_function_keys = set()
         self.current_hooks: Optional[dinkster_inference.hooks.HookGroup] = None
-        self.current_transformer_options = None
         self.forced_hooks: Optional[dinkster_inference.hooks.HookGroup] = None  # NOTE: only used for CLIP at this time
         self.is_clip = False
         self.hook_mode = dinkster_inference.hooks.EnumHookMode.MaxSpeed
@@ -499,13 +406,6 @@ class ModelPatcher:
 
     def is_dynamic(self):
         return False
-
-    def patch_program_descriptor(self):
-        return {
-            "type": f"{type(self).__module__}.{type(self).__qualname__}",
-            "base": str(self.clone_base_uuid),
-            "program": self.patch_program.digest,
-        }
 
     def model_size(self):
         if self.size > 0:
@@ -548,21 +448,19 @@ class ModelPatcher:
             model_override = self.get_clone_model_override()
 
         n = class_(model_override[0], self.load_device, self.offload_device, self.model_size(), weight_inplace_update=self.weight_inplace_update, fast_disk=self.fast_disk)
-        n._set_patch_program(self.patch_program.clone_module_resources())
-        n.patch_site_map = self.patch_site_map
-        n.patch_materializers = self.patch_materializers.copy()
+        n.patches = {}
+        for k in self.patches:
+            n.patches[k] = self.patches[k][:]
         n.patches_uuid = self.patches_uuid
 
+        n.object_patches = self.object_patches.copy()
         n.weight_wrapper_patches = self.weight_wrapper_patches.copy()
         n.model_options = dinkster_inference.utils.deepcopy_list_dict(self.model_options)
         n.parent = self
 
         n.force_cast_weights = self.force_cast_weights
-        n.pin_offloaded_weights = self.pin_offloaded_weights
 
         n.backup, n.backup_buffers, n.object_patches_backup, n.pinned = model_override[1]
-        if n.model is self.model:
-            n._training_forward_backup = self._training_forward_backup
 
         # attachments
         n.attachments = {}
@@ -571,6 +469,9 @@ class ModelPatcher:
                 n.attachments[k] = self.attachments[k].on_model_patcher_clone()
             else:
                 n.attachments[k] = self.attachments[k]
+        # additional models
+        for k, c in self.additional_models.items():
+            n.additional_models[k] = [x.clone() for x in c]
         # callbacks
         for k, c in self.callbacks.items():
             n.callbacks[k] = {}
@@ -581,9 +482,11 @@ class ModelPatcher:
             n.wrappers[k] = {}
             for k1, w1 in w.items():
                 n.wrappers[k][k1] = w1.copy()
+        # injection
         n.is_injected = self.is_injected
-        n._materialized_insertions = self._materialized_insertions.copy()
         n.skip_injection = self.skip_injection
+        for k, i in self.injections.items():
+            n.injections[k] = i.copy()
         # hooks
         n.hook_patches = create_hook_patches_clone(self.hook_patches)
         n.hook_patches_backup = create_hook_patches_clone(self.hook_patches_backup) if self.hook_patches_backup else self.hook_patches_backup
@@ -644,13 +547,12 @@ class ModelPatcher:
         # multigpu_clone all stored additional_models; make sure circular references are properly handled
         if models_cache is None:
             models_cache = {}
-        for key, model_list in tuple(n.additional_models.items()):
-            cloned_models = []
-            for add_model in model_list:
+        for key, model_list in n.additional_models.items():
+            for i in range(len(model_list)):
+                add_model = n.additional_models[key][i]
                 if add_model.clone_base_uuid not in models_cache:
                     models_cache[add_model.clone_base_uuid] = add_model.deepclone_multigpu(new_load_device=new_load_device, models_cache=models_cache)
-                cloned_models.append(models_cache[add_model.clone_base_uuid])
-            n.set_additional_models(key, cloned_models)
+                n.additional_models[key][i] = models_cache[add_model.clone_base_uuid]
         for callback in self.get_all_callbacks(CallbacksMP.ON_DEEPCLONE_MULTIGPU):
             callback(self, n)
         return n
@@ -666,13 +568,8 @@ class ModelPatcher:
                 n.hook_backup = mm.hook_backup
                 n.is_multigpu_base_clone = mm.is_multigpu_base_clone
                 n.remove_additional_models("multigpu")
-                orig_additional_models = {
-                    key: list(models) for key, models in n.additional_models.items()
-                }
-                for key in tuple(n.additional_models):
-                    n.remove_additional_models(key)
-                for key, models in mm.additional_models.items():
-                    n.set_additional_models(key, list(models))
+                orig_additional_models: dict[str, list[ModelPatcher]] = dinkster_inference.patcher_extension.copy_nested_dicts(n.additional_models)
+                n.additional_models = dinkster_inference.patcher_extension.copy_nested_dicts(mm.additional_models)
                 # figure out which additional models are not present in multigpu clone
                 models_cache = {}
                 for mm_add_model in mm.get_additional_models():
@@ -688,7 +585,7 @@ class ModelPatcher:
                         if orig_add_model.clone_base_uuid in remove_models_uuids:
                             remove_models_uuids.remove(orig_add_model.clone_base_uuid)
                 # remove duplicate additional models
-                for key, model_list in tuple(n.additional_models.items()):
+                for key, model_list in n.additional_models.items():
                     new_model_list = [x for x in model_list if x.clone_base_uuid not in remove_models_uuids]
                     n.set_additional_models(key, new_model_list)
                 for callback in self.get_all_callbacks(CallbacksMP.ON_MATCH_MULTIGPU_CLONES):
@@ -715,8 +612,6 @@ class ModelPatcher:
             return False
         if self.hook_patches.keys() != clone.hook_patches.keys():
             return False
-        if self.patch_program.digest != clone.patch_program.digest:
-            return False
         if self.attachments.keys() != clone.attachments.keys():
             return False
         if self.additional_models.keys() != clone.additional_models.keys():
@@ -727,6 +622,8 @@ class ModelPatcher:
         for key in self.wrappers:
             if len(self.wrappers[key]) != len(clone.wrappers[key]):
                 return False
+        if self.injections.keys() != clone.injections.keys():
+            return False
 
         if len(self.patches) == 0 and len(clone.patches) == 0:
             return True
@@ -767,100 +664,13 @@ class ModelPatcher:
         self.model_options["denoise_mask_function"] = denoise_mask_function
 
     def set_model_patch(self, patch, name):
-        self._set_patch_program(self.patch_program.append_runtime_patch(name, patch))
-        self.patches_uuid = self.patch_program.digest
-
-    def register_patch_materializer(self, recipe, materializer):
-        if not recipe:
-            raise ValueError("module insertion recipe must not be empty")
-        if not callable(getattr(materializer, "create_handle", None)):
-            raise TypeError("patch materializer must define create_handle")
-        if not callable(getattr(materializer, "materialize", None)):
-            raise TypeError("patch materializer must define materialize")
-        if not callable(getattr(materializer, "teardown", None)):
-            raise TypeError("patch materializer must define teardown")
-        existing = self.patch_materializers.get(recipe)
-        if existing is not None and existing is not materializer:
-            raise ValueError(f"patch materializer already registered for '{recipe}'")
-        self.patch_materializers[recipe] = materializer
-
-    def set_module_insertions(self, namespace, entries):
-        entries = tuple(entries)
-        available = tuple(self.patch_site_map)
-        for entry in entries:
-            if entry.namespace != namespace:
-                raise ValueError("module insertion namespace does not match replacement key")
-            if entry.site not in self.patch_site_map:
-                raise ValueError(
-                    f"unknown module insertion site '{entry.site}'; available sites: {available}"
-                )
-            if entry.activation != 0.0 and entry.recipe not in self.patch_materializers:
-                raise ValueError(
-                    f"module insertion recipe '{entry.recipe}' is not registered"
-                )
-        self._set_patch_program(
-            self.patch_program.replace_module_insertions(namespace, entries)
-        )
-        self.patches_uuid = self.patch_program.digest
-
-    def get_module_insertions(self, namespace=None):
-        return self.patch_program.module_insertions(namespace)
-
-    def _module_insertion_sort_key(self, entry):
-        site = self.patch_site_map[entry.site]
-        site_order = site.get("order", 0) if isinstance(site, dict) else 0
-        position_order = {"before": 0, "replace": 1, "after": 2}
-        return (site_order, position_order[entry.position], entry.order, entry.namespace)
-
-    def _materialize_module_insertions(self):
-        if self._materialized_insertions:
-            return
-        entries = sorted(
-            (
-                entry
-                for entry in self.patch_program.module_insertions()
-                if entry.activation != 0.0
-            ),
-            key=self._module_insertion_sort_key,
-        )
-        try:
-            for entry in entries:
-                entry.validate_resources()
-                materializer = self.patch_materializers[entry.recipe]
-                handle = materializer.create_handle(
-                    self,
-                    self.patch_site_map[entry.site],
-                    entry,
-                    self._patch_scratch.setdefault(entry.namespace, {}),
-                )
-                self._materialized_insertions.append((materializer, handle))
-                materializer.materialize(self, handle)
-        except Exception:
-            self._teardown_module_insertions()
-            raise
-
-    def _teardown_module_insertions(self):
-        error = None
-        for materializer, handle in reversed(self._materialized_insertions):
-            try:
-                materializer.teardown(self, handle)
-            except Exception as exc:
-                if error is None:
-                    error = exc
-        self._materialized_insertions.clear()
-        self._patch_scratch.clear()
-        if error is not None:
-            raise error
+        to = self.model_options["transformer_options"]
+        if "patches" not in to:
+            to["patches"] = {}
+        to["patches"][name] = to["patches"].get(name, []) + [patch]
 
     def set_model_patch_replace(self, patch, name, block_name, number, transformer_index=None):
-        if transformer_index is None:
-            key = (block_name, number)
-        else:
-            key = (block_name, number, transformer_index)
-        self._set_patch_program(
-            self.patch_program.replace_runtime_patch(name, key, patch)
-        )
-        self.patches_uuid = self.patch_program.digest
+        self.model_options = set_model_options_patch_replace(self.model_options, patch, name, block_name, number, transformer_index=transformer_index)
 
     def set_model_attn1_patch(self, patch):
         self.set_model_patch(patch, "attn1_patch")
@@ -930,13 +740,13 @@ class ModelPatcher:
 
 
     def add_object_patch(self, name, obj):
-        self._set_patch_program(self.patch_program.replace_object(name, obj))
-        self.patches_uuid = self.patch_program.digest
+        self.object_patches[name] = obj
 
     def set_model_compute_dtype(self, dtype):
         self.add_object_patch("manual_cast_dtype", dtype)
         if dtype is not None:
             self.force_cast_weights = True
+        self.patches_uuid = uuid.uuid4() #TODO: optimize by preventing a full model reload for this
 
     def add_weight_wrapper(self, name, function):
         self.weight_wrapper_patches[name] = self.weight_wrapper_patches.get(name, []) + [function]
@@ -965,23 +775,43 @@ class ModelPatcher:
                 return dinkster_inference.utils.get_attr(self.model, name)
 
     def model_patches_to(self, device):
-        def move(patch):
-            if hasattr(patch, "to"):
-                return patch.to(device)
-            return patch
-
-        self._set_patch_program(self.patch_program.map_runtime_patches(move))
-        self.patches_uuid = self.patch_program.digest
+        to = self.model_options["transformer_options"]
+        if "patches" in to:
+            patches = to["patches"]
+            for name in patches:
+                patch_list = patches[name]
+                for i in range(len(patch_list)):
+                    if hasattr(patch_list[i], "to"):
+                        patch_list[i] = patch_list[i].to(device)
+        if "patches_replace" in to:
+            patches = to["patches_replace"]
+            for name in patches:
+                patch_list = patches[name]
+                for k in patch_list:
+                    if hasattr(patch_list[k], "to"):
+                        patch_list[k] = patch_list[k].to(device)
         if "model_function_wrapper" in self.model_options:
             wrap_func = self.model_options["model_function_wrapper"]
             if hasattr(wrap_func, "to"):
                 self.model_options["model_function_wrapper"] = wrap_func.to(device)
 
     def model_patches_models(self):
+        to = self.model_options["transformer_options"]
         models = []
-        for entry in self.patch_program.runtime_patches():
-            if hasattr(entry.patch.value, "models"):
-                models += entry.patch.value.models()
+        if "patches" in to:
+            patches = to["patches"]
+            for name in patches:
+                patch_list = patches[name]
+                for i in range(len(patch_list)):
+                    if hasattr(patch_list[i], "models"):
+                        models += patch_list[i].models()
+        if "patches_replace" in to:
+            patches = to["patches_replace"]
+            for name in patches:
+                patch_list = patches[name]
+                for k in patch_list:
+                    if hasattr(patch_list[k], "models"):
+                        models += patch_list[k].models()
         if "model_function_wrapper" in self.model_options:
             wrap_func = self.model_options["model_function_wrapper"]
             if hasattr(wrap_func, "models"):
@@ -990,13 +820,21 @@ class ModelPatcher:
         return models
 
     def model_patches_call_function(self, function_name="cleanup", arguments={}):
-        def call(patch):
-            if hasattr(patch, function_name):
-                getattr(patch, function_name)(**arguments)
-            return patch
-
-        self._set_patch_program(self.patch_program.map_runtime_patches(call))
-        self.patches_uuid = self.patch_program.digest
+        to = self.model_options["transformer_options"]
+        if "patches" in to:
+            patches = to["patches"]
+            for name in patches:
+                patch_list = patches[name]
+                for i in range(len(patch_list)):
+                    if hasattr(patch_list[i], function_name):
+                        getattr(patch_list[i], function_name)(**arguments)
+        if "patches_replace" in to:
+            patches = to["patches_replace"]
+            for name in patches:
+                patch_list = patches[name]
+                for k in patch_list:
+                    if hasattr(patch_list[k], function_name):
+                        getattr(patch_list[k], function_name)(**arguments)
         if "model_function_wrapper" in self.model_options:
             wrap_func = self.model_options["model_function_wrapper"]
             if hasattr(wrap_func, function_name):
@@ -1006,99 +844,11 @@ class ModelPatcher:
         if hasattr(self.model, "get_dtype"):
             return self.model.get_dtype()
 
-    @property
-    def patches(self):
-        return self._compiled_patches
-
-    @patches.setter
-    def patches(self, patches):
-        program = self.patch_program.replace_weight_deltas(patches)
-        self._set_patch_program(program)
-        self.patches_uuid = program.digest
-
-    def set_training_settings(self, enabled=False, fp8_backward=False):
-        self._set_patch_program(self.patch_program.with_training_settings(enabled, fp8_backward))
-        self.patches_uuid = self.patch_program.digest
-
-    def set_gradient_checkpoints(self, targets):
-        """Checkpoint named module forwards; an empty path selects the root."""
-        targets = tuple(targets)
-        for target in targets:
-            self.model.get_submodule(target)
-        self._set_patch_program(self.patch_program.with_gradient_checkpoints(targets))
-        self.patches_uuid = self.patch_program.digest
-
-    def _restore_training_forwards(self):
-        for module, had_forward, original in reversed(self._training_forward_backup):
-            if had_forward:
-                module.forward = original
-            else:
-                del module.forward
-        self._training_forward_backup.clear()
-
-    def _apply_training_forwards(self):
-        self._restore_training_forwards()
-        settings = self.patch_program.training_settings()
-        checkpoint_targets = {e.target for e in self.patch_program.gradient_checkpoints()}
-        if checkpoint_targets and not settings.enabled:
-            raise ValueError("gradient checkpointing requires training mode")
-        targets = {"", *checkpoint_targets}
-        if hasattr(self.model, "diffusion_model"):
-            targets.add("diffusion_model")
-        modules = [(target, self.model.get_submodule(target)) for target in sorted(targets)]
-        for target, module in modules:
-            original = module.forward
-            self._training_forward_backup.append((module, "forward" in module.__dict__, original))
-
-            def wrap(forward, checkpointed):
-                def contexts():
-                    scope = dinkster_inference.model_management.training_settings_scope
-                    return (scope(settings.enabled, settings.fp8_backward),
-                            scope(settings.enabled, settings.fp8_backward))
-
-                @functools.wraps(forward)
-                def scoped(*args, **kwargs):
-                    with dinkster_inference.model_management.training_settings_scope(settings.enabled, settings.fp8_backward):
-                        if checkpointed and torch.is_grad_enabled():
-                            return checkpoint(forward, *args, use_reentrant=False,
-                                              context_fn=contexts, **kwargs)
-                        return forward(*args, **kwargs)
-                return scoped
-
-            module.forward = wrap(original, target in checkpoint_targets)
-
-    def _set_patch_program(self, program):
-        self.patch_program = program
-        patches = program.weight_patches()
-        self._compiled_patches = MappingProxyType({key: tuple(entries) for key, entries in patches.items()})
-        self.object_patches = MappingProxyType(program.object_replacements())
-        additional_models = {}
-        for entry in program.module_insertions():
-            if entry.recipe == "dinkster.additional_model":
-                key = entry.namespace.removeprefix("additional:")
-                additional_models.setdefault(key, []).append(entry.resources.value)
-        self.additional_models = MappingProxyType(
-            {key: list(models) for key, models in additional_models.items()}
-        )
-        transformer_options = self.model_options["transformer_options"]
-        transformer_options.pop("patches", None)
-        transformer_options.pop("patches_replace", None)
-        for entry in program.runtime_patches():
-            if entry.key is None:
-                runtime_patches = transformer_options.setdefault("patches", {})
-                runtime_patches.setdefault(entry.name, []).append(entry.patch.value)
-            else:
-                replacements = transformer_options.setdefault("patches_replace", {})
-                replacements.setdefault(entry.name, {})[entry.key] = entry.patch.value
-
-    def _validate_patch_program(self, target=None):
-        self.patch_program.validate_resources(target)
-
     def add_patches(self, patches, strength_patch=1.0, strength_model=1.0):
         with self.use_ejected():
             p = set()
+            weights_changed = False
             model_sd = self.model.state_dict()
-            additions = []
             for k in patches:
                 offset = None
                 function = None
@@ -1125,19 +875,19 @@ class ModelPatcher:
 
                 if key in model_sd:
                     p.add(k)
-                    additions.append((key, patches[k], strength_patch, strength_model, offset, function))
+                    current_patches = self.patches.get(key, [])
+                    current_patches.append((strength_patch, patches[k], strength_model, offset, function))
+                    self.patches[key] = current_patches
+                    weights_changed = True
 
-            program = self.patch_program.extend_weight_deltas(additions)
-            self._set_patch_program(program)
-            self.patches_uuid = program.digest
+            if weights_changed:
+                self.patches_uuid = uuid.uuid4()
             return list(p)
 
-    def get_key_patches(self, filter_prefix=None, keys=None):
+    def get_key_patches(self, filter_prefix=None):
         model_sd = self.model_state_dict()
         p = {}
-        for k in model_sd if keys is None else keys:
-            if k not in model_sd:
-                continue
+        for k in model_sd:
             if filter_prefix is not None:
                 if not k.startswith(filter_prefix):
                     continue
@@ -1154,7 +904,7 @@ class ModelPatcher:
                 convert_func = lambda a, **kwargs: a
 
             if k in self.patches:
-                p[k] = [(weight, convert_func)] + list(self.patches[k])
+                p[k] = [(weight, convert_func)] + self.patches[k]
             else:
                 p[k] = [(weight, convert_func)]
         return p
@@ -1170,7 +920,6 @@ class ModelPatcher:
             return sd
 
     def patch_weight_to_device(self, key, device_to=None, inplace_update=False, return_weight=False, force_cast=False):
-        self._validate_patch_program(key)
         weight, set_func, convert_func = get_key_weight(self.model, key)
         if key not in self.patches and not force_cast:
             return weight
@@ -1202,8 +951,6 @@ class ModelPatcher:
             return set_func(out_weight, inplace_update=inplace_update, seed=dinkster_inference.utils.string_to_seed(key), return_weight=return_weight)
 
     def pin_weight_to_device(self, key):
-        if not self.pin_offloaded_weights:
-            return
         weight, set_func, convert_func = get_key_weight(self.model, key)
         if dinkster_inference.model_management.pin_memory(weight):
             self.pinned.add(key)
@@ -1256,20 +1003,13 @@ class ModelPatcher:
         return loading
 
     def load(self, device_to=None, lowvram_model_memory=0, force_patch_weights=False, full_load=False):
-        for attachment in self.attachments.values():
-            callback = getattr(attachment, "on_model_load_target", None)
-            if callback is not None:
-                callback(self, lowvram_model_memory)
-        self._validate_patch_program()
         with self.use_ejected():
             self.unpatch_hooks()
-            self._refresh_hook_weight_function_keys()
             mem_counter = 0
             patch_counter = 0
             lowvram_counter = 0
             lowvram_mem_counter = 0
             loading = self._load_list()
-            hook_patch_keys = self.get_hook_patch_keys()
 
             load_completely = []
             offloaded = []
@@ -1307,14 +1047,14 @@ class ModelPatcher:
                             self.patch_weight_to_device(weight_key)
                         else:
                             _, set_func, convert_func = get_key_weight(self.model, weight_key)
-                            m.weight_function = [LowVramPatch(weight_key, self.patches, self.patch_program.validate_resources, convert_func, set_func)]
+                            m.weight_function = [LowVramPatch(weight_key, self.patches, convert_func, set_func)]
                             patch_counter += 1
                     if bias_key in self.patches:
                         if force_patch_weights or dinkster_inference.lora.calculate_shape(self.patches[bias_key], m.bias, bias_key) != m.bias.shape:
                             self.patch_weight_to_device(bias_key)
                         else:
                             _, set_func, convert_func = get_key_weight(self.model, bias_key)
-                            m.bias_function = [LowVramPatch(bias_key, self.patches, self.patch_program.validate_resources, convert_func, set_func)]
+                            m.bias_function = [LowVramPatch(bias_key, self.patches, convert_func, set_func)]
                             patch_counter += 1
 
                     cast_weight = True
@@ -1336,20 +1076,8 @@ class ModelPatcher:
                 if weight_key in self.weight_wrapper_patches:
                     m.weight_function.extend(self.weight_wrapper_patches[weight_key])
 
-                if (
-                    weight_key in hook_patch_keys
-                    and hasattr(m, "weight_function")
-                    and not isinstance(m.weight, QuantizedTensor)
-                ):
-                    m.weight_function.append(HookWeightPatch(self, weight_key))
-                    self.hook_weight_function_keys.add(weight_key)
-
                 if bias_key in self.weight_wrapper_patches:
                     m.bias_function.extend(self.weight_wrapper_patches[bias_key])
-
-                if bias_key in hook_patch_keys and hasattr(m, "bias_function"):
-                    m.bias_function.append(HookWeightPatch(self, bias_key))
-                    self.hook_weight_function_keys.add(bias_key)
 
                 mem_counter += move_weight_functions(m, device_to)
 
@@ -1406,9 +1134,7 @@ class ModelPatcher:
             self.apply_hooks(self.forced_hooks, force_apply=True)
 
     def patch_model(self, device_to=None, lowvram_model_memory=0, load_weights=True, force_patch_weights=False):
-        self._restore_training_forwards()
         with self.use_ejected():
-            self._validate_patch_program()
             for k in self.object_patches:
                 old = dinkster_inference.utils.set_attr(self.model, k, self.object_patches[k])
                 if k not in self.object_patches_backup:
@@ -1518,14 +1244,14 @@ class ModelPatcher:
                                     self.patch_weight_to_device(weight_key)
                                 else:
                                     _, set_func, convert_func = get_key_weight(self.model, weight_key)
-                                    m.weight_function.append(LowVramPatch(weight_key, self.patches, self.patch_program.validate_resources, convert_func, set_func))
+                                    m.weight_function.append(LowVramPatch(weight_key, self.patches, convert_func, set_func))
                                     patch_counter += 1
                             if bias_key in self.patches:
                                 if force_patch_weights or dinkster_inference.lora.calculate_shape(self.patches[bias_key], m.bias, bias_key) != m.bias.shape:
                                     self.patch_weight_to_device(bias_key)
                                 else:
                                     _, set_func, convert_func = get_key_weight(self.model, bias_key)
-                                    m.bias_function.append(LowVramPatch(bias_key, self.patches, self.patch_program.validate_resources, convert_func, set_func))
+                                    m.bias_function.append(LowVramPatch(bias_key, self.patches, convert_func, set_func))
                                     patch_counter += 1
                             cast_weight = True
 
@@ -1666,52 +1392,17 @@ class ModelPatcher:
         return self.attachments.get(key, None)
 
     def set_injections(self, key: str, injections: list[PatcherInjection]):
-        namespace = f"injection:{key}"
-        entries = tuple(
-            ModuleInsertionEntry.create(
-                namespace=namespace,
-                site="model.root",
-                recipe="dinkster.patcher_injection",
-                resources=injection,
-                order=order,
-            )
-            for order, injection in enumerate(injections)
-        )
-        self.set_module_insertions(namespace, entries)
+        self.injections[key] = injections
 
     def remove_injections(self, key: str):
-        self.set_module_insertions(f"injection:{key}", ())
+        if key in self.injections:
+            self.injections.pop(key)
 
     def get_injections(self, key: str):
-        entries = self.get_module_insertions(f"injection:{key}")
-        if not entries:
-            return None
-        return [entry.resources.value for entry in entries]
+        return self.injections.get(key, None)
 
-    def set_bypass_adapters(self, key, adapters):
-        namespace = f"bypass:{key}"
-        entries = tuple(
-            ModuleInsertionEntry.create(
-                namespace=namespace,
-                site="model.root",
-                recipe="dinkster.scheduled_bypass",
-                resources=ScheduledBypassAdapter.create(
-                    target,
-                    adapter,
-                    strength,
-                    ContributionGain(),
-                    None,
-                ),
-                order=order,
-            )
-            for order, (target, (adapter, strength)) in enumerate(
-                sorted(adapters.items())
-            )
-        )
-        self.set_module_insertions(namespace, entries)
-
-    def remove_bypass_adapters(self, key):
-        self.set_module_insertions(f"bypass:{key}", ())
+    def set_additional_models(self, key: str, models: list['ModelPatcher']):
+        self.additional_models[key] = models
 
     @contextlib.contextmanager
     def writable_models(self, conds, noise_shape, model_options):
@@ -1725,39 +1416,17 @@ class ModelPatcher:
                         stack.enter_context(patcher.writable_model(model))
             yield
 
-    def set_additional_models(self, key: str, models: list['ModelPatcher']):
-        namespace = f"additional:{key}"
-        entries = tuple(
-            ModuleInsertionEntry.create(
-                namespace=namespace,
-                site="model.root",
-                recipe="dinkster.additional_model",
-                resources=model.clone(),
-                order=order,
-                activation=0.0,
-                clone_policy="copy",
-                share_policy="clone",
-                device_policy="resource",
-                offload_policy="resident",
-            )
-            for order, model in enumerate(models)
-        )
-        self.set_module_insertions(namespace, entries)
-
     def remove_additional_models(self, key: str):
-        self.set_module_insertions(f"additional:{key}", ())
+        if key in self.additional_models:
+            self.additional_models.pop(key)
 
     def get_additional_models_with_key(self, key: str):
-        if key == "writable" and self._writable_model is not None:
-            return [self._writable_model]
-        return list(self.additional_models.get(key, ()))
+        return self.additional_models.get(key, [])
 
     def get_additional_models(self):
         all_models: list[ModelPatcher] = []
         for models in self.additional_models.values():
             all_models.extend(models)
-        if self._writable_model is not None:
-            all_models.append(self._writable_model)
         return all_models
 
     def get_nested_additional_models(self):
@@ -1785,19 +1454,21 @@ class ModelPatcher:
     def inject_model(self):
         if self.is_injected or self.skip_injection:
             return
-        self._materialize_module_insertions()
-        self._apply_training_forwards()
-        self.is_injected = bool(self._materialized_insertions or self._training_forward_backup)
+        for injections in self.injections.values():
+            for inj in injections:
+                inj.inject(self)
+                self.is_injected = True
         if self.is_injected:
             for callback in self.get_all_callbacks(CallbacksMP.ON_INJECT_MODEL):
                 callback(self)
 
     def eject_model(self):
-        self._restore_training_forwards()
-        if not self.is_injected and not self._materialized_insertions:
+        if not self.is_injected:
             return
+        for injections in self.injections.values():
+            for inj in injections:
+                inj.eject(self)
         self.is_injected = False
-        self._teardown_module_insertions()
         for callback in self.get_all_callbacks(CallbacksMP.ON_EJECT_MODEL):
             callback(self)
 
@@ -1824,23 +1495,17 @@ class ModelPatcher:
         if self.hook_patches_backup is not None:
             self.hook_patches = self.hook_patches_backup
             self.hook_patches_backup = None
-            self._refresh_hook_weight_function_keys()
-            namespaces = {
-                entry.namespace
-                for entry in self.patch_program.module_insertions()
-                if entry.namespace.startswith("scheduled-bypass:")
-            }
-            for namespace in namespaces:
-                self.set_module_insertions(namespace, ())
 
     def set_hook_mode(self, hook_mode: dinkster_inference.hooks.EnumHookMode):
         self.hook_mode = hook_mode
 
     def prepare_hook_patches_current_keyframe(self, t: torch.Tensor, hook_group: dinkster_inference.hooks.HookGroup, model_options: dict[str]):
+        curr_t = t[0]
         reset_current_hooks = False
         multigpu_kf_changed_cache = None
+        transformer_options = model_options.get("transformer_options", {})
         for hook in hook_group.hooks:
-            changed = hook.prepare_current_gain(t)
+            changed = hook.hook_keyframe.prepare_current_keyframe(curr_t=curr_t, transformer_options=transformer_options)
             # if keyframe changed, remove any cached HookGroups that contain hook with the same hook_ref;
             # this will cause the weights to be recalculated when sampling
             if changed:
@@ -1910,8 +1575,6 @@ class ModelPatcher:
             current_hook_patches: dict[str,list] = self.hook_patches.get(hook.hook_ref, {})
             p = set()
             model_sd = self.model.state_dict()
-            bypass_entries = []
-            bypass_namespace = f"scheduled-bypass:{len(self.hook_patches)}"
             for k in patches:
                 if isinstance(patches[k], tuple) and len(patches[k]) == 2 and patches[k][0] == "config":
                     continue
@@ -1927,45 +1590,10 @@ class ModelPatcher:
 
                 if key in model_sd:
                     p.add(k)
-                    patch = patches[k]
-                    requires_output_gain = bool(
-                        hook.contribution_gain.lane_gains
-                        or hook.contribution_gain.effect_masks
-                    )
-                    if (
-                        isinstance(patch, (WeightAdapterBase, WeightAdapterTrainBase))
-                        and (
-                            isinstance(get_key_weight(self.model, key)[0], QuantizedTensor)
-                            or requires_output_gain
-                        )
-                    ):
-                        resource = ScheduledBypassAdapter.create(
-                            key,
-                            patch,
-                            strength_patch,
-                            hook.contribution_gain.with_timeline(
-                                hook.hook_keyframe.contribution_gain.timeline
-                            ),
-                            hook.hook_ref,
-                        )
-                        bypass_entries.append(
-                            ModuleInsertionEntry.create(
-                                namespace=bypass_namespace,
-                                site="model.root",
-                                recipe="dinkster.scheduled_bypass",
-                                resources=resource,
-                                order=len(bypass_entries),
-                                clone_policy="copy",
-                            )
-                        )
-                        continue
                     current_patches: list[tuple] = current_hook_patches.get(key, [])
                     current_patches.append((strength_patch, patches[k], strength_model, offset, function))
                     current_hook_patches[key] = current_patches
             self.hook_patches[hook.hook_ref] = current_hook_patches
-            self._refresh_hook_weight_function_keys()
-            if bypass_entries:
-                self.set_module_insertions(bypass_namespace, bypass_entries)
             # since should care about these patches too to determine if same model, reroll patches_uuid
             self.patches_uuid = uuid.uuid4()
             return list(p)
@@ -1978,40 +1606,16 @@ class ModelPatcher:
                 hook_patches: dict = self.hook_patches.get(hook.hook_ref, {})
                 for key in hook_patches.keys():
                     current_patches: list[tuple] = combined_patches.get(key, [])
-                    gain = hook.gain_for(site=key)
-                    if math.isclose(gain, 1.0):
+                    if math.isclose(hook.strength, 1.0):
                         current_patches.extend(hook_patches[key])
                     else:
                         # patches are stored as tuples: (strength_patch, (tuple_with_weights,), strength_model)
                         for patch in hook_patches[key]:
                             new_patch = list(patch)
-                            new_patch[0] *= gain
+                            new_patch[0] *= hook.strength
                             current_patches.append(tuple(new_patch))
                     combined_patches[key] = current_patches
         return combined_patches
-
-    def get_hook_patch_keys(self):
-        return {
-            key
-            for patches in self.hook_patches.values()
-            for key in patches
-        }
-
-    def _refresh_hook_weight_function_keys(self):
-        keys = set()
-        for key in self.get_hook_patch_keys():
-            module_key, separator, parameter = key.rpartition(".")
-            if not separator:
-                module_key = ""
-            if parameter not in ("weight", "bias"):
-                continue
-            module = self.model if not module_key else self.model.get_submodule(module_key)
-            if (
-                hasattr(module, f"{parameter}_function")
-                and not isinstance(getattr(module, parameter), QuantizedTensor)
-            ):
-                keys.add(key)
-        self.hook_weight_function_keys = keys
 
     def apply_hooks(self, hooks: dinkster_inference.hooks.HookGroup, transformer_options: dict=None, force_apply=False):
         # TODO: return transformer_options dict with any additions from hooks
@@ -2044,14 +1648,10 @@ class ModelPatcher:
                     self.unpatch_hooks(model_sd_keys_set)
                 else:
                     self.unpatch_hooks()
-                    relevant_patches = {
-                        key: patches
-                        for key, patches in self.get_combined_hook_patches(hooks=hooks).items()
-                        if key not in self.hook_weight_function_keys
-                    }
+                    relevant_patches = self.get_combined_hook_patches(hooks=hooks)
                     original_weights = None
                     if len(relevant_patches) > 0:
-                        original_weights = self.get_key_patches(keys=relevant_patches)
+                        original_weights = self.get_key_patches()
                     for key in relevant_patches:
                         if key not in model_sd_keys:
                             logging.warning(f"Cached hook would not patch. Key does not exist in model: {key}")
@@ -2157,7 +1757,7 @@ class ModelPatcher:
             except:
                 output_state_dict[k] = v
                 continue
-            if not op or not hasattr(op, "comfy_cast_weights") or \
+            if not op or not hasattr(op, "comfy_cast_weights") or\
                 (hasattr(op, "comfy_patched_weights") and op.comfy_patched_weights == True):
                 output_state_dict[k] = v
                 continue
@@ -2241,8 +1841,7 @@ class ModelPatcherDynamic(ModelPatcher):
         try:
             model.load_state_dict(state, assign=True)
             patcher = ModelPatcherDynamic(model, self.load_device, torch.device("cpu"), fast_disk=self.fast_disk)
-            # Execution-owned cache tensors must not become persistent patch resources.
-            self._writable_model = patcher
+            self.set_additional_models("writable", [patcher])
             # Loading reverses this list; the writable model gets priority over its owner.
             dinkster_inference.model_management.load_models_gpu([patcher, self])
             patcher.set_in_use_by_current_prompt(True)
@@ -2254,7 +1853,7 @@ class ModelPatcherDynamic(ModelPatcher):
                 dinkster_inference.model_prefetch.cleanup_prefetch_queues()
                 dinkster_inference.model_prefetch.cleanup_malloc_graph()
                 if patcher is not None:
-                    self._writable_model = None
+                    self.remove_additional_models("writable")
                     vbar = model.dynamic_vbars.pop(patcher.load_device, None)
                     if vbar is not None:
                         vbar.close()
@@ -2263,26 +1862,6 @@ class ModelPatcherDynamic(ModelPatcher):
                             pin["dirty"] = False
                     dinkster_inference.model_management.unload_model_and_clones(patcher, unload_additional_models=False)
                 file.close()
-
-    def _install_hook_weight_functions(self):
-        for key in self.get_hook_patch_keys():
-            module_key, separator, parameter = key.rpartition(".")
-            if not separator:
-                module_key = ""
-            functions = f"{parameter}_function"
-            module = self.model if not module_key else self.model.get_submodule(module_key)
-            weight = getattr(module, parameter, None)
-            if not hasattr(module, functions) or isinstance(weight, QuantizedTensor):
-                continue
-            weight_functions = getattr(module, functions)
-            if not any(isinstance(function, HookWeightPatch) and function.key == key for function in weight_functions):
-                weight_functions.append(HookWeightPatch(self, key))
-            self.hook_weight_function_keys.add(key)
-
-    def add_hook_patches(self, hook: dinkster_inference.hooks.WeightHook, patches, strength_patch=1.0, strength_model=1.0):
-        added = super().add_hook_patches(hook, patches, strength_patch, strength_model)
-        self._install_hook_weight_functions()
-        return added
 
     def set_in_use_by_current_prompt(self, in_use):
         self.model.dynamic_pins[self.load_device]["current_prompt"] = in_use
@@ -2364,11 +1943,6 @@ class ModelPatcherDynamic(ModelPatcher):
 
 
     def load(self, device_to=None, lowvram_model_memory=0, force_patch_weights=False, full_load=False, dirty=False):
-        for attachment in self.attachments.values():
-            callback = getattr(attachment, "on_model_load_target", None)
-            if callback is not None:
-                callback(self, lowvram_model_memory)
-        self._validate_patch_program()
 
         #Force patching doesn't make sense in Dynamic loading, as you dont know what does and
         #doesn't need to be forced at this stage. The only thing you could do would be patch
@@ -2387,7 +1961,6 @@ class ModelPatcherDynamic(ModelPatcher):
 
         with self.use_ejected():
             self.unpatch_hooks()
-            hook_patch_keys = self.get_hook_patch_keys()
 
             vbar = self._vbar_get(create=True)
             pin_state = self.model.dynamic_pins[self.load_device]
@@ -2448,7 +2021,7 @@ class ModelPatcherDynamic(ModelPatcher):
                     if key in self.patches:
                         if dinkster_inference.lora.calculate_shape(self.patches[key], weight, key) != weight.shape:
                             return (True, 0)
-                        lowvram_patch = LowVramPatch(key, self.patches, self.patch_program.validate_resources)
+                        lowvram_patch = LowVramPatch(key, self.patches)
                         lowvram_patch._pin_state = pin_state
                         setattr(m, param_key + "_lowvram_function", lowvram_patch)
                         num_patches += 1
@@ -2457,9 +2030,6 @@ class ModelPatcherDynamic(ModelPatcher):
 
                     if key in self.weight_wrapper_patches:
                         weight_function.extend(self.weight_wrapper_patches[key])
-                    if key in hook_patch_keys and not isinstance(weight, QuantizedTensor):
-                        weight_function.append(HookWeightPatch(self, key))
-                        self.hook_weight_function_keys.add(key)
                     setattr(m, param_key + "_function", weight_function)
                     geometry = weight
                     if not isinstance(weight, QuantizedTensor):
@@ -2612,7 +2182,7 @@ class ModelPatcherDynamic(ModelPatcher):
                     dinkster_inference.model_management.discard_cuda_async_error()
                     continue
                 module_pin["registered"] = False
-                dinkster_inference.model_management.get_model_manager().release_pinned_memory(size)
+                dinkster_inference.model_management.TOTAL_PINNED_MEMORY = max(0, dinkster_inference.model_management.TOTAL_PINNED_MEMORY - size)
                 pinned_size[0] = max(0, pinned_size[0] - size)
                 freed += size
                 ram_to_unload -= size
@@ -2639,7 +2209,7 @@ class ModelPatcherDynamic(ModelPatcher):
                 hostbuf.truncate(offset, do_unregister=registered)
                 stack_split[0] = min(stack_split[0], len(stack) - 1)
                 if registered:
-                    dinkster_inference.model_management.get_model_manager().release_pinned_memory(size)
+                    dinkster_inference.model_management.TOTAL_PINNED_MEMORY = max(0, dinkster_inference.model_management.TOTAL_PINNED_MEMORY - size)
                     pinned_size[0] = max(0, pinned_size[0] - size)
                 freed += size
                 ram_to_unload -= size
@@ -2693,7 +2263,7 @@ class ModelPatcherDynamic(ModelPatcher):
         raise RuntimeError("Hooks not implemented in ModelPatcherDynamic. Please remove --fast arguments form ComfyUI startup")
 
     def unpatch_hooks(self, whitelist_keys_set: set[str]=None) -> None:
-        self.current_hooks = None
+        pass
 
     def get_non_dynamic_delegate(self):
         model_patcher = self.clone(disable_dynamic=True, model_override=self.non_dynamic_delegate_model)

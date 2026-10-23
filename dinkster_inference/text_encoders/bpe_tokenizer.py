@@ -101,8 +101,8 @@ def _make_split_pattern(pattern_str):
 
 def _bytes_to_unicode():
     bs = (list(range(ord("!"), ord("~") + 1))
-          + list(range(ord("¡"), ord("¬") + 1))
-          + list(range(ord("®"), ord("ÿ") + 1)))
+          + list(range(ord('\xa1'), ord('\xac') + 1))
+          + list(range(ord('\xae'), ord('\xff') + 1)))
     cs = bs[:]
     n = 0
     for b in range(2**8):

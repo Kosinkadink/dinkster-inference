@@ -72,7 +72,7 @@ def get_pin(module, subset="weights"):
 
     module_pin["registered"] = True
     stack_split[0] = max(stack_split[0], module_pin["stack_index"])
-    dinkster_inference.model_management.get_model_manager().add_pinned_memory(size)
+    dinkster_inference.model_management.TOTAL_PINNED_MEMORY += size
     pinned_size[0] += size
     return pin
 
@@ -132,7 +132,7 @@ def pin_memory(module, subset="weights", size=None):
     module_pin["registered"] = True
     module_pin["stack_index"] = len(stack) - 1
     stack_split[0] = max(stack_split[0], module_pin["stack_index"])
-    dinkster_inference.model_management.get_model_manager().add_pinned_memory(size)
+    dinkster_inference.model_management.TOTAL_PINNED_MEMORY += size
     pinned_size[0] += size
     _add_to_bucket(module, module_pin, buckets, size, priority)
     return True

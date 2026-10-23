@@ -17,84 +17,84 @@ def japanese_to_romaji(japanese_text):
     # Dictionary mapping kana characters to their romaji equivalents
     kana_map = {
         # Katakana characters
-        'ア': 'a', 'イ': 'i', 'ウ': 'u', 'エ': 'e', 'オ': 'o',
-        'カ': 'ka', 'キ': 'ki', 'ク': 'ku', 'ケ': 'ke', 'コ': 'ko',
-        'サ': 'sa', 'シ': 'shi', 'ス': 'su', 'セ': 'se', 'ソ': 'so',
-        'タ': 'ta', 'チ': 'chi', 'ツ': 'tsu', 'テ': 'te', 'ト': 'to',
-        'ナ': 'na', 'ニ': 'ni', 'ヌ': 'nu', 'ネ': 'ne', 'ノ': 'no',
-        'ハ': 'ha', 'ヒ': 'hi', 'フ': 'fu', 'ヘ': 'he', 'ホ': 'ho',
-        'マ': 'ma', 'ミ': 'mi', 'ム': 'mu', 'メ': 'me', 'モ': 'mo',
-        'ヤ': 'ya', 'ユ': 'yu', 'ヨ': 'yo',
-        'ラ': 'ra', 'リ': 'ri', 'ル': 'ru', 'レ': 're', 'ロ': 'ro',
-        'ワ': 'wa', 'ヲ': 'wo', 'ン': 'n',
+        '\u30a2': 'a', '\u30a4': 'i', '\u30a6': 'u', '\u30a8': 'e', '\u30aa': 'o',
+        '\u30ab': 'ka', '\u30ad': 'ki', '\u30af': 'ku', '\u30b1': 'ke', '\u30b3': 'ko',
+        '\u30b5': 'sa', '\u30b7': 'shi', '\u30b9': 'su', '\u30bb': 'se', '\u30bd': 'so',
+        '\u30bf': 'ta', '\u30c1': 'chi', '\u30c4': 'tsu', '\u30c6': 'te', '\u30c8': 'to',
+        '\u30ca': 'na', '\u30cb': 'ni', '\u30cc': 'nu', '\u30cd': 'ne', '\u30ce': 'no',
+        '\u30cf': 'ha', '\u30d2': 'hi', '\u30d5': 'fu', '\u30d8': 'he', '\u30db': 'ho',
+        '\u30de': 'ma', '\u30df': 'mi', '\u30e0': 'mu', '\u30e1': 'me', '\u30e2': 'mo',
+        '\u30e4': 'ya', '\u30e6': 'yu', '\u30e8': 'yo',
+        '\u30e9': 'ra', '\u30ea': 'ri', '\u30eb': 'ru', '\u30ec': 're', '\u30ed': 'ro',
+        '\u30ef': 'wa', '\u30f2': 'wo', '\u30f3': 'n',
 
         # Katakana voiced consonants
-        'ガ': 'ga', 'ギ': 'gi', 'グ': 'gu', 'ゲ': 'ge', 'ゴ': 'go',
-        'ザ': 'za', 'ジ': 'ji', 'ズ': 'zu', 'ゼ': 'ze', 'ゾ': 'zo',
-        'ダ': 'da', 'ヂ': 'ji', 'ヅ': 'zu', 'デ': 'de', 'ド': 'do',
-        'バ': 'ba', 'ビ': 'bi', 'ブ': 'bu', 'ベ': 'be', 'ボ': 'bo',
-        'パ': 'pa', 'ピ': 'pi', 'プ': 'pu', 'ペ': 'pe', 'ポ': 'po',
+        '\u30ac': 'ga', '\u30ae': 'gi', '\u30b0': 'gu', '\u30b2': 'ge', '\u30b4': 'go',
+        '\u30b6': 'za', '\u30b8': 'ji', '\u30ba': 'zu', '\u30bc': 'ze', '\u30be': 'zo',
+        '\u30c0': 'da', '\u30c2': 'ji', '\u30c5': 'zu', '\u30c7': 'de', '\u30c9': 'do',
+        '\u30d0': 'ba', '\u30d3': 'bi', '\u30d6': 'bu', '\u30d9': 'be', '\u30dc': 'bo',
+        '\u30d1': 'pa', '\u30d4': 'pi', '\u30d7': 'pu', '\u30da': 'pe', '\u30dd': 'po',
 
         # Katakana combinations
-        'キャ': 'kya', 'キュ': 'kyu', 'キョ': 'kyo',
-        'シャ': 'sha', 'シュ': 'shu', 'ショ': 'sho',
-        'チャ': 'cha', 'チュ': 'chu', 'チョ': 'cho',
-        'ニャ': 'nya', 'ニュ': 'nyu', 'ニョ': 'nyo',
-        'ヒャ': 'hya', 'ヒュ': 'hyu', 'ヒョ': 'hyo',
-        'ミャ': 'mya', 'ミュ': 'myu', 'ミョ': 'myo',
-        'リャ': 'rya', 'リュ': 'ryu', 'リョ': 'ryo',
-        'ギャ': 'gya', 'ギュ': 'gyu', 'ギョ': 'gyo',
-        'ジャ': 'ja', 'ジュ': 'ju', 'ジョ': 'jo',
-        'ビャ': 'bya', 'ビュ': 'byu', 'ビョ': 'byo',
-        'ピャ': 'pya', 'ピュ': 'pyu', 'ピョ': 'pyo',
+        '\u30ad\u30e3': 'kya', '\u30ad\u30e5': 'kyu', '\u30ad\u30e7': 'kyo',
+        '\u30b7\u30e3': 'sha', '\u30b7\u30e5': 'shu', '\u30b7\u30e7': 'sho',
+        '\u30c1\u30e3': 'cha', '\u30c1\u30e5': 'chu', '\u30c1\u30e7': 'cho',
+        '\u30cb\u30e3': 'nya', '\u30cb\u30e5': 'nyu', '\u30cb\u30e7': 'nyo',
+        '\u30d2\u30e3': 'hya', '\u30d2\u30e5': 'hyu', '\u30d2\u30e7': 'hyo',
+        '\u30df\u30e3': 'mya', '\u30df\u30e5': 'myu', '\u30df\u30e7': 'myo',
+        '\u30ea\u30e3': 'rya', '\u30ea\u30e5': 'ryu', '\u30ea\u30e7': 'ryo',
+        '\u30ae\u30e3': 'gya', '\u30ae\u30e5': 'gyu', '\u30ae\u30e7': 'gyo',
+        '\u30b8\u30e3': 'ja', '\u30b8\u30e5': 'ju', '\u30b8\u30e7': 'jo',
+        '\u30d3\u30e3': 'bya', '\u30d3\u30e5': 'byu', '\u30d3\u30e7': 'byo',
+        '\u30d4\u30e3': 'pya', '\u30d4\u30e5': 'pyu', '\u30d4\u30e7': 'pyo',
 
         # Katakana small characters and special cases
-        'ッ': '', # Small tsu (doubles the following consonant)
-        'ャ': 'ya', 'ュ': 'yu', 'ョ': 'yo',
+        '\u30c3': '', # Small tsu (doubles the following consonant)
+        '\u30e3': 'ya', '\u30e5': 'yu', '\u30e7': 'yo',
 
         # Katakana extras
-        'ヴ': 'vu', 'ファ': 'fa', 'フィ': 'fi', 'フェ': 'fe', 'フォ': 'fo',
-        'ウィ': 'wi', 'ウェ': 'we', 'ウォ': 'wo',
+        '\u30f4': 'vu', '\u30d5\u30a1': 'fa', '\u30d5\u30a3': 'fi', '\u30d5\u30a7': 'fe', '\u30d5\u30a9': 'fo',
+        '\u30a6\u30a3': 'wi', '\u30a6\u30a7': 'we', '\u30a6\u30a9': 'wo',
 
         # Hiragana characters
-        'あ': 'a', 'い': 'i', 'う': 'u', 'え': 'e', 'お': 'o',
-        'か': 'ka', 'き': 'ki', 'く': 'ku', 'け': 'ke', 'こ': 'ko',
-        'さ': 'sa', 'し': 'shi', 'す': 'su', 'せ': 'se', 'そ': 'so',
-        'た': 'ta', 'ち': 'chi', 'つ': 'tsu', 'て': 'te', 'と': 'to',
-        'な': 'na', 'に': 'ni', 'ぬ': 'nu', 'ね': 'ne', 'の': 'no',
-        'は': 'ha', 'ひ': 'hi', 'ふ': 'fu', 'へ': 'he', 'ほ': 'ho',
-        'ま': 'ma', 'み': 'mi', 'む': 'mu', 'め': 'me', 'も': 'mo',
-        'や': 'ya', 'ゆ': 'yu', 'よ': 'yo',
-        'ら': 'ra', 'り': 'ri', 'る': 'ru', 'れ': 're', 'ろ': 'ro',
-        'わ': 'wa', 'を': 'wo', 'ん': 'n',
+        '\u3042': 'a', '\u3044': 'i', '\u3046': 'u', '\u3048': 'e', '\u304a': 'o',
+        '\u304b': 'ka', '\u304d': 'ki', '\u304f': 'ku', '\u3051': 'ke', '\u3053': 'ko',
+        '\u3055': 'sa', '\u3057': 'shi', '\u3059': 'su', '\u305b': 'se', '\u305d': 'so',
+        '\u305f': 'ta', '\u3061': 'chi', '\u3064': 'tsu', '\u3066': 'te', '\u3068': 'to',
+        '\u306a': 'na', '\u306b': 'ni', '\u306c': 'nu', '\u306d': 'ne', '\u306e': 'no',
+        '\u306f': 'ha', '\u3072': 'hi', '\u3075': 'fu', '\u3078': 'he', '\u307b': 'ho',
+        '\u307e': 'ma', '\u307f': 'mi', '\u3080': 'mu', '\u3081': 'me', '\u3082': 'mo',
+        '\u3084': 'ya', '\u3086': 'yu', '\u3088': 'yo',
+        '\u3089': 'ra', '\u308a': 'ri', '\u308b': 'ru', '\u308c': 're', '\u308d': 'ro',
+        '\u308f': 'wa', '\u3092': 'wo', '\u3093': 'n',
 
         # Hiragana voiced consonants
-        'が': 'ga', 'ぎ': 'gi', 'ぐ': 'gu', 'げ': 'ge', 'ご': 'go',
-        'ざ': 'za', 'じ': 'ji', 'ず': 'zu', 'ぜ': 'ze', 'ぞ': 'zo',
-        'だ': 'da', 'ぢ': 'ji', 'づ': 'zu', 'で': 'de', 'ど': 'do',
-        'ば': 'ba', 'び': 'bi', 'ぶ': 'bu', 'べ': 'be', 'ぼ': 'bo',
-        'ぱ': 'pa', 'ぴ': 'pi', 'ぷ': 'pu', 'ぺ': 'pe', 'ぽ': 'po',
+        '\u304c': 'ga', '\u304e': 'gi', '\u3050': 'gu', '\u3052': 'ge', '\u3054': 'go',
+        '\u3056': 'za', '\u3058': 'ji', '\u305a': 'zu', '\u305c': 'ze', '\u305e': 'zo',
+        '\u3060': 'da', '\u3062': 'ji', '\u3065': 'zu', '\u3067': 'de', '\u3069': 'do',
+        '\u3070': 'ba', '\u3073': 'bi', '\u3076': 'bu', '\u3079': 'be', '\u307c': 'bo',
+        '\u3071': 'pa', '\u3074': 'pi', '\u3077': 'pu', '\u307a': 'pe', '\u307d': 'po',
 
         # Hiragana combinations
-        'きゃ': 'kya', 'きゅ': 'kyu', 'きょ': 'kyo',
-        'しゃ': 'sha', 'しゅ': 'shu', 'しょ': 'sho',
-        'ちゃ': 'cha', 'ちゅ': 'chu', 'ちょ': 'cho',
-        'にゃ': 'nya', 'にゅ': 'nyu', 'にょ': 'nyo',
-        'ひゃ': 'hya', 'ひゅ': 'hyu', 'ひょ': 'hyo',
-        'みゃ': 'mya', 'みゅ': 'myu', 'みょ': 'myo',
-        'りゃ': 'rya', 'りゅ': 'ryu', 'りょ': 'ryo',
-        'ぎゃ': 'gya', 'ぎゅ': 'gyu', 'ぎょ': 'gyo',
-        'じゃ': 'ja', 'じゅ': 'ju', 'じょ': 'jo',
-        'びゃ': 'bya', 'びゅ': 'byu', 'びょ': 'byo',
-        'ぴゃ': 'pya', 'ぴゅ': 'pyu', 'ぴょ': 'pyo',
+        '\u304d\u3083': 'kya', '\u304d\u3085': 'kyu', '\u304d\u3087': 'kyo',
+        '\u3057\u3083': 'sha', '\u3057\u3085': 'shu', '\u3057\u3087': 'sho',
+        '\u3061\u3083': 'cha', '\u3061\u3085': 'chu', '\u3061\u3087': 'cho',
+        '\u306b\u3083': 'nya', '\u306b\u3085': 'nyu', '\u306b\u3087': 'nyo',
+        '\u3072\u3083': 'hya', '\u3072\u3085': 'hyu', '\u3072\u3087': 'hyo',
+        '\u307f\u3083': 'mya', '\u307f\u3085': 'myu', '\u307f\u3087': 'myo',
+        '\u308a\u3083': 'rya', '\u308a\u3085': 'ryu', '\u308a\u3087': 'ryo',
+        '\u304e\u3083': 'gya', '\u304e\u3085': 'gyu', '\u304e\u3087': 'gyo',
+        '\u3058\u3083': 'ja', '\u3058\u3085': 'ju', '\u3058\u3087': 'jo',
+        '\u3073\u3083': 'bya', '\u3073\u3085': 'byu', '\u3073\u3087': 'byo',
+        '\u3074\u3083': 'pya', '\u3074\u3085': 'pyu', '\u3074\u3087': 'pyo',
 
         # Hiragana small characters and special cases
-        'っ': '', # Small tsu (doubles the following consonant)
-        'ゃ': 'ya', 'ゅ': 'yu', 'ょ': 'yo',
+        '\u3063': '', # Small tsu (doubles the following consonant)
+        '\u3083': 'ya', '\u3085': 'yu', '\u3087': 'yo',
 
         # Common punctuation and spaces
-        '　': ' ', # Japanese space
-        '、': ', ', '。': '. ',
+        '\u3000': ' ', # Japanese space
+        '\u3001': ', ', '\u3002': '. ',
     }
 
     result = []
@@ -102,7 +102,7 @@ def japanese_to_romaji(japanese_text):
 
     while i < len(japanese_text):
         # Check for small tsu (doubling the following consonant)
-        if i < len(japanese_text) - 1 and (japanese_text[i] == 'っ' or japanese_text[i] == 'ッ'):
+        if i < len(japanese_text) - 1 and (japanese_text[i] == '\u3063' or japanese_text[i] == '\u30c3'):
             if i < len(japanese_text) - 1 and japanese_text[i+1] in kana_map:
                 next_romaji = kana_map[japanese_text[i+1]]
                 if next_romaji and next_romaji[0] not in 'aiueon':
@@ -111,7 +111,7 @@ def japanese_to_romaji(japanese_text):
             continue
 
         # Check for combinations with small ya, yu, yo
-        if i < len(japanese_text) - 1 and japanese_text[i+1] in ('ゃ', 'ゅ', 'ょ', 'ャ', 'ュ', 'ョ'):
+        if i < len(japanese_text) - 1 and japanese_text[i+1] in ('\u3083', '\u3085', '\u3087', '\u30e3', '\u30e5', '\u30e7'):
             combo = japanese_text[i:i+2]
             if combo in kana_map:
                 result.append(kana_map[combo])
@@ -254,8 +254,8 @@ _symbols_multilingual = {
             ("%", " percent "),
             ("#", " hash "),
             ("$", " dollar "),
-            ("£", " pound "),
-            ("°", " degree "),
+            ('\xa3', " pound "),
+            ('\xb0', " degree "),
         ]
     ],
 }
@@ -274,8 +274,8 @@ _ordinal_re = {
 _number_re = re.compile(r"[0-9]+")
 _currency_re = {
     "USD": re.compile(r"((\$[0-9\.\,]*[0-9]+)|([0-9\.\,]*[0-9]+\$))"),
-    "GBP": re.compile(r"((£[0-9\.\,]*[0-9]+)|([0-9\.\,]*[0-9]+£))"),
-    "EUR": re.compile(r"(([0-9\.\,]*[0-9]+€)|((€[0-9\.\,]*[0-9]+)))"),
+    "GBP": re.compile('((\xa3[0-9\\.\\,]*[0-9]+)|([0-9\\.\\,]*[0-9]+\xa3))'),
+    "EUR": re.compile('(([0-9\\.\\,]*[0-9]+\u20ac)|((\u20ac[0-9\\.\\,]*[0-9]+)))'),
 }
 
 _comma_number_re = re.compile(r"\b\d{1,3}(,\d{3})*(\.\d+)?\b")
@@ -368,9 +368,9 @@ def collapse_whitespace(text):
 def multilingual_cleaners(text, lang):
     text = text.replace('"', "")
     if lang == "tr":
-        text = text.replace("İ", "i")
-        text = text.replace("Ö", "ö")
-        text = text.replace("Ü", "ü")
+        text = text.replace('\u0130', "i")
+        text = text.replace('\xd6', '\xf6')
+        text = text.replace('\xdc', '\xfc')
     text = lowercase(text)
     try:
         text = expand_numbers_multilingual(text, lang)

@@ -18,9 +18,6 @@ from .sub_quadratic_attention import efficient_dot_product_attention
 
 from dinkster_inference import model_management
 from dinkster_inference.configurable import ConfigurableModule
-import dinkster_inference.model_prefetch
-
-SOL_ATTN_PRODUCER_CHUNK = 4096
 
 if model_management.xformers_enabled():
     import xformers
@@ -59,38 +56,22 @@ except ImportError:
 COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE = comfy_kitchen.int8_attention_is_available()
 
 REGISTERED_ATTENTION_FUNCTIONS = {}
-_CORE_ATTENTION_FUNCTIONS = {}
-
-
-def create_attention_function_registry() -> dict[str, Callable]:
-    return _CORE_ATTENTION_FUNCTIONS.copy()
-
-
-def register_attention_function(
-    name: str, func: Callable, *, registry: Optional[dict[str, Callable]] = None
-):
-    functions = REGISTERED_ATTENTION_FUNCTIONS if registry is None else registry
+def register_attention_function(name: str, func: Callable):
     # avoid replacing existing functions
-    if name not in functions:
-        functions[name] = func
+    if name not in REGISTERED_ATTENTION_FUNCTIONS:
+        REGISTERED_ATTENTION_FUNCTIONS[name] = func
     else:
-        logging.warning(
-            f"Attention function {name} already registered, skipping registration."
-        )
+        logging.warning(f"Attention function {name} already registered, skipping registration.")
 
-
-def get_attention_function(
-    name: str, default: Any = ..., *, registry: Optional[dict[str, Callable]] = None
-) -> Union[Callable, None]:
+def get_attention_function(name: str, default: Any=...) -> Union[Callable, None]:
     if name == "optimized":
         return optimized_attention
-    functions = REGISTERED_ATTENTION_FUNCTIONS if registry is None else registry
-    if name not in functions:
+    elif name not in REGISTERED_ATTENTION_FUNCTIONS:
         if default is ...:
             raise KeyError(f"Attention function {name} not found.")
         else:
             return default
-    return functions[name]
+    return REGISTERED_ATTENTION_FUNCTIONS[name]
 
 
 class ComfyAttention(ConfigurableModule):
@@ -120,7 +101,7 @@ class ComfyAttention(ConfigurableModule):
                         self.function = attention_comfy_kitchen_int8
                 elif method == "comfy_kitchen_sol":
                     if comfy_kitchen.sol_attn_is_available(model_management.get_torch_device()):
-                        self.function = functools.partial(attention_comfy_kitchen_sol, sol_options={"tau": config.get("tau", 1.0)})
+                        self.function = functools.partial(attention_comfy_kitchen_sol, tau=config.get("tau", 1.0))
                 else:
                     logging.warning(f"Ignoring unknown attention method {method!r} for {prefix.rstrip('.')}")
                 if self.function is not None:
@@ -688,53 +669,6 @@ def attention_comfy_kitchen_int8(q, k, v, heads, mask=None, attn_precision=None,
     return out
 
 
-@wrap_attn
-def attention_comfy_kitchen_sol(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False, **kwargs):
-    b = q.shape[0]
-    if skip_reshape:
-        dim_head = q.shape[-1]
-    else:
-        dim_head = q.shape[-1] // heads
-        q, k, v = _reshape_qkv_to_heads(q, k, v, b, heads, dim_head, kwargs.get("enable_gqa", False), expand_kv=False)
-        q, k, v = map(lambda tensor: tensor.transpose(1, 2), (q, k, v))
-    if mask is not None:
-        raise RuntimeError("Comfy Kitchen Sol-Attn does not support an attention mask")
-    options = kwargs.get("sol_options", {})
-    out = comfy_kitchen.sol_attn(
-        q.transpose(1, 2),
-        k.transpose(1, 2),
-        v.transpose(1, 2),
-        **options,
-    ).transpose(1, 2)
-    if not skip_output_reshape:
-        out = out.transpose(1, 2).reshape(b, -1, heads * dim_head)
-    return out
-
-
-def attention_comfy_kitchen_sol_chunked(x, qkv_proj, out_proj, q_norm, k_norm, heads, rope_freqs, *, kmean=None, vscale=None, **options):
-    rows = x.shape[0]
-
-    def chunks():
-        for offset in range(0, rows, SOL_ATTN_PRODUCER_CHUNK):
-            yield qkv_proj(x[offset:offset + SOL_ATTN_PRODUCER_CHUNK])
-
-    with dinkster_inference.model_prefetch.pause_malloc_graph():
-        query_weight = model_management.cast_to(q_norm.weight, device=x.device)
-        key_weight = model_management.cast_to(k_norm.weight, device=x.device)
-        out, key_mean, value_scale = comfy_kitchen.sol_attn_chunked(
-            chunks,
-            rows,
-            heads,
-            rope_freqs,
-            (query_weight, key_weight),
-            kmean=kmean,
-            vscale=vscale,
-            rope_eps=q_norm.eps,
-            **options,
-        )
-    return out_proj(out.view(rows, -1)), key_mean, value_scale
-
-
 def _attention_comfy_kitchen_int8_containers(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False, **kwargs):
     q = q.take()
     k = k.take()
@@ -759,6 +693,23 @@ def _attention_comfy_kitchen_int8_containers(q, k, v, heads, mask=None, attn_pre
 
 
 attention_comfy_kitchen_int8.container_function = _attention_comfy_kitchen_int8_containers
+
+
+@wrap_attn
+def attention_comfy_kitchen_sol(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False, *, tau=1.0, **kwargs):
+    if mask is not None:
+        return attention_pytorch(q, k, v, heads, mask=mask, attn_precision=attn_precision, skip_reshape=skip_reshape, skip_output_reshape=skip_output_reshape, **kwargs)
+
+    dim_head = q.shape[-1] if skip_reshape else q.shape[-1] // heads
+    b = q.shape[0]
+    if skip_reshape:
+        q, k, v = map(lambda t: t.transpose(1, 2), (q, k, v))
+    else:
+        q, k, v = _reshape_qkv_to_heads(q, k, v, b, heads, dim_head)
+    out = comfy_kitchen.sol_attn(q, k, v, tau=tau, scale=kwargs.get("scale"))
+    if skip_output_reshape:
+        return out.transpose(1, 2)
+    return out.reshape(b, -1, heads * dim_head)
 
 
 @wrap_attn
@@ -1005,8 +956,6 @@ optimized_attention_masked = optimized_attention
 # register core-supported attention functions
 if COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE:
     register_attention_function("comfy_kitchen_int8", attention_comfy_kitchen_int8)
-register_attention_function("comfy_kitchen_sol", attention_comfy_kitchen_sol)
-register_attention_function("comfy_kitchen_sol_chunked", attention_comfy_kitchen_sol_chunked)
 if SAGE_ATTENTION_IS_AVAILABLE:
     register_attention_function("sage", attention_sage)
 if SAGE_ATTENTION3_IS_AVAILABLE:
@@ -1018,7 +967,6 @@ if model_management.xformers_enabled():
 register_attention_function("pytorch", attention_pytorch)
 register_attention_function("sub_quad", attention_sub_quad)
 register_attention_function("split", attention_split)
-_CORE_ATTENTION_FUNCTIONS = REGISTERED_ATTENTION_FUNCTIONS.copy()
 
 
 def optimized_attention_for_device(device, mask=False, small_input=False):

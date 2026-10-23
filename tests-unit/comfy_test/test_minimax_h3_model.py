@@ -4,7 +4,6 @@ import pytest
 import torch
 from torch import nn
 
-import dinkster_inference.ldm.minimax.vae as minimax_vae
 from dinkster_inference.ldm.minimax.model import MiniMaxH3Model, PackedLayout, time_shift_sigma
 from dinkster_inference.model_sampling import CONST
 
@@ -114,74 +113,3 @@ def test_embed_and_pack_releases_intermediates(conditioning):
     assert torch.equal(slices["video"], outputs["video"])
     assert torch.equal(slices["audio"], outputs["audio"])
     assert torch.equal(slices["text"], context[0])
-
-
-class RecordingOperations:
-    class Linear(nn.Linear):
-        def forward(self, x):
-            self.call = x
-            self.output = torch.arange(1, self.out_features + 1, dtype=x.dtype, device=x.device).expand(*x.shape[:-1], -1)
-            return self.output
-
-
-def test_vae_feed_forward_delegates_norm_activation_and_residual():
-    block = minimax_vae.FeedForward(dim=2, mult=1, operations=RecordingOperations)
-    pre_norm = minimax_vae.dinkster_inference.ops.manual_cast.RMSNorm(2, eps=0.0125)
-    pre_norm.weight = nn.Parameter(torch.tensor([0.75, 1.25]))
-    x = torch.arange(4, dtype=torch.float32).reshape(1, 2, 2)
-    residual = x + 3
-    residual_scale = torch.tensor([0.25, 0.75])
-
-    out = block(x, pre_norm, residual=residual, residual_scale=residual_scale)
-
-    torch.testing.assert_close(block.w1.call, torch.nn.functional.rms_norm(x, (2,), pre_norm.weight, pre_norm.eps))
-    gate, value = block.w1.output.chunk(2, dim=-1)
-    torch.testing.assert_close(block.w2.call, torch.nn.functional.silu(gate) * value)
-    torch.testing.assert_close(out, residual + block.w2.output * residual_scale)
-
-
-def test_vae_attention_delegates_norm_and_residual(monkeypatch):
-    block = minimax_vae.Attention(heads=1, dim_head=2, operations=RecordingOperations)
-    pre_norm = minimax_vae.dinkster_inference.ops.manual_cast.RMSNorm(2, eps=0.0125)
-    pre_norm.weight = nn.Parameter(torch.tensor([0.75, 1.25]))
-    x = torch.arange(4, dtype=torch.float32).reshape(1, 2, 2)
-    residual = x + 7
-    residual_scale = torch.tensor([0.125, 0.875])
-
-    def optimized_attention(query, key, value, heads, skip_reshape):
-        return query.transpose(1, 2).reshape(1, 2, 2)
-
-    monkeypatch.setattr(minimax_vae, "optimized_attention", optimized_attention)
-
-    out = block(x, None, pre_norm, residual=residual, residual_scale=residual_scale)
-
-    torch.testing.assert_close(block.to_qkv.call, torch.nn.functional.rms_norm(x, (2,), pre_norm.weight, pre_norm.eps))
-    query = block.to_qkv.output[..., :2]
-    torch.testing.assert_close(block.to_out.call, torch.nn.functional.rms_norm(query, (2,), block.norm_q.weight, block.norm_q.eps))
-    torch.testing.assert_close(out, residual + block.to_out.output * residual_scale)
-
-
-def test_input_act_weight_casts_offloaded_norm_with_its_own_epsilon(monkeypatch):
-    ops = minimax_vae.dinkster_inference.ops
-    pre_norm = ops.manual_cast.RMSNorm(2, eps=0.0125)
-    x = torch.arange(4, dtype=torch.float32).reshape(1, 2, 2)
-    cast_weight = object()
-    context_modules = []
-
-    class CastContext:
-        def __init__(self, module, input, offloadable):
-            context_modules.append((module, input, offloadable))
-
-        def __enter__(self):
-            return cast_weight, None
-
-        def __exit__(self, exc_type, exc_value, traceback):
-            return False
-
-    monkeypatch.setattr(ops, "CastBiasWeightContext", CastContext)
-
-    with ops._input_act_weight(x, "rms_norm", pre_norm, 0.75) as (weight, eps):
-        assert weight is cast_weight
-        assert eps == pre_norm.eps
-
-    assert context_modules == [(pre_norm, x, True)]

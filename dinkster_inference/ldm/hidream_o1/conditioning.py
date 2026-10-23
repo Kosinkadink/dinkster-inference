@@ -1,9 +1,4 @@
-"""HiDream-O1 conditioning prep — ref-image dual path + extra_conds assembly.
-
-Each ref image goes through two paths: a 32x32 patchified stream concatenated
-to the noised target, and a Qwen3-VL ViT path producing tokens that scatter
-into input_ids at <|image_pad|> positions.
-"""
+'HiDream-O1 conditioning prep \u2014 ref-image dual path + extra_conds assembly.\n\nEach ref image goes through two paths: a 32x32 patchified stream concatenated\nto the noised target, and a Qwen3-VL ViT path producing tokens that scatter\ninto input_ids at <|image_pad|> positions.\n'
 
 from typing import List
 

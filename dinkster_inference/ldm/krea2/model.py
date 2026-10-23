@@ -1,9 +1,4 @@
-"""Krea 2 (K2) -- single-stream MMDiT.
-
-Text tokens produced by a Qwen3-VL-4B 12-layer ``txtfusion`` adapter and patchified image tokens are
-concatenated into one sequence and run through ``layers`` shared transformer blocks with
-AdaLN-single modulation, GQA + per-head QK-norm + sigmoid-gated attention, SwiGLU MLP, and 3-axis RoPE.
-"""
+'Krea 2 (K2) \u2014 single-stream MMDiT.\n\nText tokens produced by a Qwen3-VL-4B 12-layer ``txtfusion`` adapter and patchified image tokens are\nconcatenated into one sequence and run through ``layers`` shared transformer blocks with\nAdaLN-single modulation, GQA + per-head QK-norm + sigmoid-gated attention, SwiGLU MLP, and 3-axis RoPE.\n'
 
 from typing import Optional
 

@@ -1135,15 +1135,11 @@ class ChromaRadiance(LatentFormat):
 
 
 class ZImagePixelSpace(ChromaRadiance):
-    """Pixel-space latent format for ZImage DCT variant.
-    No VAE encoding/decoding - the model operates directly on RGB pixels.
-    """
+    'Pixel-space latent format for ZImage DCT variant.\n    No VAE encoding/decoding \u2014 the model operates directly on RGB pixels.\n    '
     pass
 
 class HiDreamO1Pixel(ChromaRadiance):
-    """Pixel-space latent format for HiDream-O1.
-    No VAE - model patches/unpatches raw RGB internally with patch_size=32.
-    """
+    'Pixel-space latent format for HiDream-O1.\n    No VAE \u2014 model patches/unpatches raw RGB internally with patch_size=32.\n    '
     pass
 
 class PixelDiTPixel(ChromaRadiance):

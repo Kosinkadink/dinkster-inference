@@ -268,6 +268,8 @@ jobs:
           # New inference files may not be recognized as part of the package rename.
           if [ -d comfy ]; then
             while IFS= read -r -d '' source; do
+              # The installed alias is packaging, not an upstream inference file.
+              [ "$source" = "comfy/__init__.py" ] && continue
               destination="dinkster_inference/${source#comfy/}"
               mkdir -p "$(dirname "$destination")"
               mv "$source" "$destination"
@@ -279,7 +281,7 @@ jobs:
           # library tests, and requirements changes flow through an automatic sync.
           while IFS= read -r -d '' path; do
             case "$path" in
-              dinkster_inference/*|tests-unit/comfy_test/*|tests-unit/comfy_quant/*|tests-unit/deploy_environment_test.py|requirements.txt)
+              dinkster_inference/*|tests-unit/comfy_test/*|tests-unit/comfy_quant/*|node_helpers.py|requirements.txt)
                 ;;
               *)
                 if git cat-file -e "$base:$path" 2>/dev/null; then
@@ -291,7 +293,7 @@ jobs:
             esac
           done < <(git diff --cached --name-only -z)
 
-          python3 tools/rewrite_upstream_imports.py dinkster_inference tests-unit/comfy_test tests-unit/comfy_quant tests-unit/deploy_environment_test.py
+          python3 tools/rewrite_upstream_imports.py dinkster_inference tests-unit/comfy_test tests-unit/comfy_quant node_helpers.py
           python3 - "$target" <<'PY'
           import re
           import sys

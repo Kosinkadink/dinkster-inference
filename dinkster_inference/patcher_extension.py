@@ -53,7 +53,6 @@ class WrappersMP:
     SAMPLER_SAMPLE = "sampler_sample"
     PREDICT_NOISE = "predict_noise"
     CALC_COND_BATCH = "calc_cond_batch"
-    WINDOW_EXECUTE = "window_execute"
     APPLY_MODEL = "apply_model"
     DIFFUSION_MODEL = "diffusion_model"
 
@@ -131,17 +130,9 @@ class WrapperExecutor:
         return cls(original, class_obj, wrappers, idx=idx)
 
 class PatcherInjection:
-    def __init__(self, inject: Callable, eject: Callable, resources=None):
+    def __init__(self, inject: Callable, eject: Callable):
         self.inject = inject
         self.eject = eject
-        self.resources = resources
-
-    def patch_program_descriptor(self):
-        return {
-            "inject": self.inject,
-            "eject": self.eject,
-            "resources": self.resources,
-        }
 
 def copy_nested_dicts(input_dict: dict):
     new_dict = input_dict.copy()

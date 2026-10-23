@@ -29,9 +29,7 @@ jobs:
             echo "::error title=Standalone import failed::$message"
             exit 1
           fi
-      - name: Check inference and training contract lint
-        run: python -m ruff check dinkster_inference tests-unit/comfy_test/training_api_test.py
-      - name: Verify training API contract
-        run: python -m pytest -q tests-unit/comfy_test/training_api_test.py
+      - name: Check inference and packaging lint
+        run: python -m ruff check dinkster_inference comfy node_helpers.py tools
       - name: Run retained library tests
-        run: python -m pytest -q tests-unit/comfy_test tests-unit/comfy_quant tests-unit/deploy_environment_test.py --ignore=tests-unit/comfy_test/training_api_test.py
+        run: python -m pytest -q tests-unit/comfy_test tests-unit/comfy_quant

@@ -1738,8 +1738,8 @@ class SCAILWanModel(WanModel):
         img_offset = 0
         if reference_latent is not None:
             x = torch.cat((reference_latent, x), dim=2)
-            img_offset = (reference_latent.shape[2] // self.patch_size[0]) * \
-                         (reference_latent.shape[3] // self.patch_size[1]) * \
+            img_offset = (reference_latent.shape[2] // self.patch_size[0]) *\
+                         (reference_latent.shape[3] // self.patch_size[1]) *\
                          (reference_latent.shape[4] // self.patch_size[2])
 
         # embeddings

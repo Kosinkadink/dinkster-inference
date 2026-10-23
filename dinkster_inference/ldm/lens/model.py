@@ -151,7 +151,7 @@ class LensJointAttention(nn.Module):
         txt_k = self.norm_added_k(txt_k)
         del txt_qkv
 
-        # [B, S, H, D] -> [B, H, S, D] for attention, dels to avoid VRAM peaks
+        # [B, S, H, D] \u2192 [B, H, S, D] for attention, dels to avoid VRAM peaks
         q = torch.cat([img_q, txt_q], dim=1).transpose(1, 2)
         del img_q, txt_q
         k = torch.cat([img_k, txt_k], dim=1).transpose(1, 2)
@@ -274,11 +274,7 @@ class LensTransformerBlock(nn.Module):
 
 
 class _AdaLayerNormContinuousNoAffine(nn.Module):
-    """AdaLayerNormContinuous(elementwise_affine=False).
-
-    The reference uses ``scale, shift = chunk(2)`` (scale first) -- opposite
-    to Flux's ``LastLayer``.
-    """
+    "AdaLayerNormContinuous(elementwise_affine=False).\n\n    The reference uses ``scale, shift = chunk(2)`` (scale first) \u2014 opposite\n    to Flux's ``LastLayer``.\n    "
 
     def __init__(self, embedding_dim: int, conditioning_embedding_dim: int, eps: float = 1e-6,
                  dtype=None, device=None, operations=None) -> None:

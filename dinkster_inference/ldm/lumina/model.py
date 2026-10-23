@@ -939,16 +939,7 @@ class DCTFinalLayer(nn.Module):
 
 
 class SimpleMLPAdaLN(nn.Module):
-    """
-    Small MLP decoder head for the pixel-space variant.
-
-    Takes per-patch pixel values and a per-patch conditioning vector from the
-    transformer backbone and predicts the denoised pixel values.
-
-    x : [B*N, P^2, C]   - noisy pixel values per patch position
-    c : [B*N, dim]       - backbone hidden state per patch (conditioning)
-    -> [B*N, P^2, C]
-    """
+    '\n    Small MLP decoder head for the pixel-space variant.\n\n    Takes per-patch pixel values and a per-patch conditioning vector from the\n    transformer backbone and predicts the denoised pixel values.\n\n    x : [B*N, P^2, C]   \u2013 noisy pixel values per patch position\n    c : [B*N, dim]       \u2013 backbone hidden state per patch (conditioning)\n    \u2192 [B*N, P^2, C]\n    '
 
     def __init__(
         self,
@@ -965,7 +956,7 @@ class SimpleMLPAdaLN(nn.Module):
         super().__init__()
         self.dtype = dtype
 
-        # Project backbone hidden state to per-patch conditioning
+        # Project backbone hidden state \u2192 per-patch conditioning
         self.cond_embed = operations.Linear(z_channels, model_channels, dtype=dtype, device=device)
 
         # Input projection with DCT positional encoding
@@ -999,24 +990,11 @@ class SimpleMLPAdaLN(nn.Module):
 
 
 #############################################################################
-#                          NextDiT - Pixel Space                            #
+#                          NextDiT \u2013 Pixel Space                            #
 #############################################################################
 
 class NextDiTPixelSpace(NextDiT):
-    """
-    Pixel-space variant of NextDiT.
-
-    Identical transformer backbone to NextDiT, but the output head is replaced
-    with a small MLP decoder (SimpleMLPAdaLN) that operates on raw pixel values
-    per patch rather than a single affine projection.
-
-    Key differences vs NextDiT:
-      * ``final_layer`` is removed; ``dec_net`` (SimpleMLPAdaLN) is used instead.
-      * ``_forward`` stores the raw patchified pixel values before the backbone
-        embedding and feeds them to ``dec_net`` together with the per-patch
-        backbone hidden states.
-      * Supports optional x0 prediction via ``use_x0``.
-    """
+    '\n    Pixel-space variant of NextDiT.\n\n    Identical transformer backbone to NextDiT, but the output head is replaced\n    with a small MLP decoder (SimpleMLPAdaLN) that operates on raw pixel values\n    per patch rather than a single affine projection.\n\n    Key differences vs NextDiT:\n      \u2022 ``final_layer`` is removed; ``dec_net`` (SimpleMLPAdaLN) is used instead.\n      \u2022 ``_forward`` stores the raw patchified pixel values before the backbone\n        embedding and feeds them to ``dec_net`` together with the per-patch\n        backbone hidden states.\n      \u2022 Supports optional x0 prediction via ``use_x0``.\n    '
 
     def __init__(
         self,
@@ -1031,7 +1009,7 @@ class NextDiTPixelSpace(NextDiT):
     ):
         super().__init__(**kwargs)
 
-        # Remove the latent-space final layer - not used in pixel space
+        # Remove the latent-space final layer \u2013 not used in pixel space
         del self.final_layer
 
         patch_size = kwargs.get("patch_size", 2)
@@ -1057,7 +1035,7 @@ class NextDiTPixelSpace(NextDiT):
             self.register_buffer("__x0__", torch.tensor([]))
 
     # ------------------------------------------------------------------
-    # Forward - mirrors NextDiT._forward exactly, replacing final_layer
+    # Forward \u2014 mirrors NextDiT._forward exactly, replacing final_layer
     # with the pixel-space dec_net decoder.
     # ------------------------------------------------------------------
     def _forward(self, x, timesteps, context, num_tokens, attention_mask=None, ref_latents=[], ref_contexts=[], siglip_feats=[], transformer_options={}, **kwargs):

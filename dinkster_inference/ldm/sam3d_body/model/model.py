@@ -15,7 +15,7 @@ from ..mhr.mhr_rig import MHRRig
 from ..mhr.mhr_utils import fix_wrist_euler, rotation_angle_difference
 from .transformer import MLP
 from .camera_modules import CameraEncoder, PerspectiveHead
-from ..face_landmarker import FaceLandmarker
+from comfy_extras.mediapipe.face_landmarker import FaceLandmarker
 from ..utils import bbox_xyxy2cs, fix_aspect_ratio, get_warp_matrices, warp_affine_batched, euler_to_rotmat, rotmat_to_euler
 
 # Architecture constants for the released `dinov3-h+` SAM 3D Body checkpoint.
@@ -234,9 +234,7 @@ class SAM3DBody(nn.Module):
         cam_int: torch.Tensor,
         is_multi_image: bool,
     ) -> Tuple[Dict, Dict]:
-        """Build batch_lhand + batch_rhand directly on GPU. Bit-exact match
-        for the CPU `prepare_batch` x 2 path, with the source uploaded once
-        and both warps issued through one batched grid_sample."""
+        'Build batch_lhand + batch_rhand directly on GPU. Bit-exact match\n        for the CPU `prepare_batch` \xd7 2 path, with the source uploaded once\n        and both warps issued through one batched grid_sample.'
 
         device = dinkster_inference.model_management.get_torch_device()
         if is_multi_image:
@@ -406,7 +404,7 @@ class SAM3DBody(nn.Module):
             prompt_embeddings, _ = self.prompt_encoder(keypoints=keypoints)
             prompt_embeddings = self.prompt_to_token(prompt_embeddings)
 
-            # Pin dtypes so a silent fp16→fp32 promotion in any branch
+            # Pin dtypes so a silent fp16\u2192fp32 promotion in any branch
             # (init/prev/prompt) doesn't break the index_put assigns below.
             token_embeddings = torch.cat(
                 [token_embeddings, prev_embeddings, prompt_embeddings], dim=1,
@@ -433,7 +431,7 @@ class SAM3DBody(nn.Module):
             pose_token = tokens[:, 0]
             prev_pose = init_pose.view(batch_size, -1)
             prev_camera = init_camera.view(batch_size, -1)
-            # Suppress vertices on non-final layers — kp-token updates only
+            # Suppress vertices on non-final layers \u2014 kp-token updates only
             # need keypoints, so we skip the 18439-vertex perspective projection.
             is_intermediate = layer_idx != last_layer_idx
             pose_output = head_pose(pose_token, prev_pose, intermediate=is_intermediate)
@@ -487,7 +485,7 @@ class SAM3DBody(nn.Module):
         pred_keypoints_2d: torch.Tensor,
         batch_idx: torch.Tensor = None,
     ) -> torch.Tensor:
-        """Full-image kp coords → crop-normalized [-0.5, 0.5]."""
+        'Full-image kp coords \u2192 crop-normalized [-0.5, 0.5].'
         pred_keypoints_2d_cropped = torch.cat(
             [pred_keypoints_2d, torch.ones_like(pred_keypoints_2d[:, :, [-1]])], dim=-1
         )
@@ -582,7 +580,7 @@ class SAM3DBody(nn.Module):
         ray_cond = None
 
         image_embeddings = self.backbone.forward_features(x.type(self.backbone_dtype))
-        # bf16 mantissa too lossy for the heads — promote back. fp16 survives.
+        # bf16 mantissa too lossy for the heads \u2014 promote back. fp16 survives.
         if self.backbone_dtype != torch.float16:
             image_embeddings = image_embeddings.type(x.dtype)
 
@@ -626,7 +624,7 @@ class SAM3DBody(nn.Module):
             "condition_info": condition_info,
             "image_embeddings": image_embeddings,
         }
-        # hand_box is (x1, y1, w, h) ∈ [0, 1]. Body path promotes to fp32 to
+        # hand_box is (x1, y1, w, h) \u2208 [0, 1]. Body path promotes to fp32 to
         # match the head-MLP external contract (_get_hand_box would .float() anyway).
         if len(self.body_batch_idx):
             output["mhr"]["hand_box"] = self.bbox_embed(tokens_output).sigmoid().float()
@@ -672,7 +670,7 @@ class SAM3DBody(nn.Module):
 
         # 2. Hand re-run. Flip the left box's x so it indexes into the
         # to-be-flipped source image (the flip itself happens on GPU inside
-        # _prepare_hand_batches_gpu — no CPU copy of the frames needed).
+        # _prepare_hand_batches_gpu \u2014 no CPU copy of the frames needed).
         tmp = left_xyxy.clone()
         left_xyxy[:, 0] = width - tmp[:, 2] - 1
         left_xyxy[:, 2] = width - tmp[:, 0] - 1
@@ -681,7 +679,7 @@ class SAM3DBody(nn.Module):
             img, left_xyxy, right_xyxy, cam_int.clone(), is_multi_image,
         )
         # Concat lhand+rhand along dim 0 so backbone+decoder run once on
-        # (2, num_person, ...) — saves one full DINOv3 ViT-H+ pass.
+        # (2, num_person, ...) \u2014 saves one full DINOv3 ViT-H+ pass.
         batch_hands = self._concat_hand_batches(batch_lhand, batch_rhand)
         saved_batch_state = (self._batch_size, self._max_num_person)
         self._initialize_batch(batch_hands)
@@ -693,7 +691,7 @@ class SAM3DBody(nn.Module):
         # mhr_hand views into the underlying tensors stay alive via l/rhand_output.
         del hands_output, batch_hands
 
-        # Unflip left-hand output. Keep MHR consts as 0-d on-device tensors —
+        # Unflip left-hand output. Keep MHR consts as 0-d on-device tensors \u2014
         # `.item()` would force four hard CPU<->GPU syncs in the hot path.
         _lhand_scale = lhand_output["mhr_hand"]["scale"]
         scale_r_hands_mean = self.head_pose.scale_mean[8].to(_lhand_scale)
@@ -704,8 +702,8 @@ class SAM3DBody(nn.Module):
             (scale_r_hands_mean + scale_r_hands_std * lhand_output["mhr_hand"]["scale"][:, 8])
             - scale_l_hands_mean
         ) / scale_l_hands_std
-        # Right-hand global rotation flipped → used as left.
-        lhand_output["mhr_hand"]["joint_global_rots"][:, 78] = \
+        # Right-hand global rotation flipped \u2192 used as left.
+        lhand_output["mhr_hand"]["joint_global_rots"][:, 78] =\
             lhand_output["mhr_hand"]["joint_global_rots"][:, 42].clone()
         lhand_output["mhr_hand"]["joint_global_rots"][:, 78, [1, 2], :] *= -1
         lhand_output["mhr_hand"]["hand"][:, :54] = lhand_output["mhr_hand"]["hand"][:, 54:]
@@ -754,9 +752,9 @@ class SAM3DBody(nn.Module):
         left_kps_full[:, :, 0] = width - left_kps_full[:, :, 0] - 1
         body_right_kps_full = pose_output["mhr"]["pred_keypoints_2d"][:, [kps_right_wrist_idx]].clone()
         body_left_kps_full = pose_output["mhr"]["pred_keypoints_2d"][:, [kps_left_wrist_idx]].clone()
-        right_kps_dist = (right_kps_full - body_right_kps_full).flatten(0, 1).norm(dim=-1) \
+        right_kps_dist = (right_kps_full - body_right_kps_full).flatten(0, 1).norm(dim=-1)\
             / batch_lhand["bbox_scale"].flatten(0, 1)[:, 0]
-        left_kps_dist = (left_kps_full - body_left_kps_full).flatten(0, 1).norm(dim=-1) \
+        left_kps_dist = (left_kps_full - body_left_kps_full).flatten(0, 1).norm(dim=-1)\
             / batch_rhand["bbox_scale"].flatten(0, 1)[:, 0]
         hand_wrist_kps2d_valid_mask = torch.stack(
             [left_kps_dist < hand_wrist_kps2d_thresh,
@@ -804,7 +802,7 @@ class SAM3DBody(nn.Module):
             ).unsqueeze(-1)
             dummy_prompt = torch.zeros((1, 1, 3), dtype=keypoint_prompt.dtype, device=keypoint_prompt.device)
             dummy_prompt[:, :, -1] = -2
-            # Shift [-0.5, 0.5] → [0, 1] for the prompt encoder.
+            # Shift [-0.5, 0.5] \u2192 [0, 1] for the prompt encoder.
             keypoint_prompt[:, :, :2] = torch.clamp(keypoint_prompt[:, :, :2] + 0.5, 0.0, 1.0)
             keypoint_prompt = torch.where(invalid_prompt, dummy_prompt, keypoint_prompt)
         else:
@@ -936,7 +934,7 @@ class SAM3DBody(nn.Module):
             return_model_params=True,
             return_joint_rotations=True,
         )
-        # j3d: 308 → 70 body/hand kps + 238 face landmarks. All four buffers
+        # j3d: 308 \u2192 70 body/hand kps + 238 face landmarks. All four buffers
         # need the same y/z flip so they share a coordinate system.
         j3d_face = j3d[:, 70:].clone()
         j3d = j3d[:, :70]
@@ -1004,8 +1002,7 @@ class SAM3DBody(nn.Module):
         return output, keypoint_prompt
 
     def _get_hand_box(self, pose_output, batch):
-        """Hand bbox from the detector → full-image coords (xyxy). Stays on
-        device throughout."""
+        'Hand bbox from the detector \u2192 full-image coords (xyxy). Stays on\n        device throughout.'
         hand_box = pose_output["mhr"]["hand_box"]  # (B, 2, 4) fp32
         pred_left_hand_box = hand_box[:, 0] * self.image_size[0]
         pred_right_hand_box = hand_box[:, 1] * self.image_size[0]
@@ -1016,7 +1013,7 @@ class SAM3DBody(nn.Module):
         batch["right_center"] = pred_right_hand_box[:, :2]
         batch["right_scale"] = pred_right_hand_box[:, 2:].amax(dim=1, keepdim=True).repeat(1, 2)
 
-        # Invert the crop's full→crop affine. rot=0 makes it diagonal:
+        # Invert the crop's full\u2192crop affine. rot=0 makes it diagonal:
         # divide-by-scale and subtract translation offset.
         affine_trans = batch["affine_trans"][0]
         affine_scale = affine_trans[:, 0, 0]
@@ -1074,7 +1071,7 @@ class SAM3DBody(nn.Module):
             posemb_linear = self.keypoint_posemb_linear_hand
             feat_linear = self.keypoint_feat_linear_hand
 
-        # Last layer's pose output is final — nothing to inject back.
+        # Last layer's pose output is final \u2014 nothing to inject back.
         if layer_idx == len(decoder_layers) - 1:
             return token_embeddings, token_augment, pose_output, layer_idx
 
@@ -1102,7 +1099,7 @@ class SAM3DBody(nn.Module):
         )
 
         # Bilinear-sample image features at each kp's projected location.
-        # grid_sample wants -1..1; cropped form is -0.5..0.5, so ×2.
+        # grid_sample wants -1..1; cropped form is -0.5..0.5, so \xd72.
         sample_points = pred_keypoints_2d_cropped * 2
         feats = F.grid_sample(
             image_embeddings, sample_points[:, :, None, :],

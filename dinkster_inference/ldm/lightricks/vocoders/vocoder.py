@@ -560,13 +560,7 @@ class Vocoder(torch.nn.Module):
 
 
 class _STFTFn(nn.Module):
-    """Implements STFT as a convolution with precomputed DFT × Hann-window bases.
-
-    The DFT basis rows (real and imaginary parts interleaved) multiplied by the causal
-    Hann window are stored as buffers and loaded from the checkpoint. Using the exact
-    bfloat16 bases from training ensures the mel values fed to the BWE generator are
-    bit-identical to what it was trained on.
-    """
+    'Implements STFT as a convolution with precomputed DFT \xd7 Hann-window bases.\n\n    The DFT basis rows (real and imaginary parts interleaved) multiplied by the causal\n    Hann window are stored as buffers and loaded from the checkpoint. Using the exact\n    bfloat16 bases from training ensures the mel values fed to the BWE generator are\n    bit-identical to what it was trained on.\n    '
 
     def __init__(self, filter_length: int, hop_length: int, win_length: int):
         super().__init__()
@@ -577,21 +571,7 @@ class _STFTFn(nn.Module):
         self.register_buffer("inverse_basis", torch.zeros(n_freqs * 2, 1, filter_length))
 
     def forward(self, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Compute magnitude and phase spectrogram from a batch of waveforms.
-
-        Applies causal (left-only) padding of win_length - hop_length samples so that
-        each output frame depends only on past and present input — no lookahead.
-        The STFT is computed by convolving the padded signal with forward_basis.
-
-        Args:
-            y: Waveform tensor of shape (B, T).
-
-        Returns:
-            magnitude: Linear amplitude spectrogram, shape (B, n_freqs, T_frames).
-            phase:     Phase spectrogram in radians, shape (B, n_freqs, T_frames).
-                       Computed in float32 for numerical stability, then cast back to
-                       the input dtype.
-        """
+        'Compute magnitude and phase spectrogram from a batch of waveforms.\n\n        Applies causal (left-only) padding of win_length - hop_length samples so that\n        each output frame depends only on past and present input \u2014 no lookahead.\n        The STFT is computed by convolving the padded signal with forward_basis.\n\n        Args:\n            y: Waveform tensor of shape (B, T).\n\n        Returns:\n            magnitude: Linear amplitude spectrogram, shape (B, n_freqs, T_frames).\n            phase:     Phase spectrogram in radians, shape (B, n_freqs, T_frames).\n                       Computed in float32 for numerical stability, then cast back to\n                       the input dtype.\n        '
         if y.dim() == 2:
             y = y.unsqueeze(1)                                # (B, 1, T)
         left_pad = max(0, self.win_length - self.hop_length)  # causal: left-only
@@ -653,11 +633,7 @@ class MelSTFT(nn.Module):
 
 
 class VocoderWithBWE(torch.nn.Module):
-    """Vocoder with bandwidth extension (BWE) for higher sample rate output.
-
-    Chains a base vocoder (mel → low-rate waveform) with a BWE stage that upsamples
-    to a higher rate. The BWE computes a mel spectrogram from the low-rate waveform.
-    """
+    'Vocoder with bandwidth extension (BWE) for higher sample rate output.\n\n    Chains a base vocoder (mel \u2192 low-rate waveform) with a BWE stage that upsamples\n    to a higher rate. The BWE computes a mel spectrogram from the low-rate waveform.\n    '
 
     def __init__(self, config):
         super().__init__()

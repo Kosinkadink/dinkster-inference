@@ -310,7 +310,7 @@ class SingleStreamMultiAttention(SingleStreamAttention):
         encoder_kv = encoder_kv.view(B, N_a, 2, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
         encoder_k, encoder_v = encoder_kv.unbind(0)
 
-        # Rotary for keys -- assign centre of each speaker bucket to its context tokens
+        # Rotary for keys \u2013 assign centre of each speaker bucket to its context tokens
         per_frame = torch.zeros(N_a, dtype=encoder_k.dtype, device=encoder_k.device)
         per_frame[: per_frame.size(0) // 2] = (rope_h1[0] + rope_h1[1]) / 2
         per_frame[per_frame.size(0) // 2 :] = (rope_h2[0] + rope_h2[1]) / 2

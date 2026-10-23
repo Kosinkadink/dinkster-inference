@@ -345,7 +345,7 @@ class Attention(nn.Module):
 
         if hasattr(self, 'to_q'):
             if self.differential:
-                # cross-attention differential: to_q -> (q, q_diff), to_kv -> (k, k_diff, v)
+                # cross-attention differential: to_q \u2192 (q, q_diff), to_kv \u2192 (k, k_diff, v)
                 q, q_diff = self.to_q(x).chunk(2, dim=-1)
                 q      = rearrange(q,      'b n (h d) -> b h n d', h=h)
                 q_diff = rearrange(q_diff, 'b n (h d) -> b h n d', h=h)
@@ -365,7 +365,7 @@ class Attention(nn.Module):
                 k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = kv_h), (k, v))
         else:
             if self.differential:
-                # self-attention differential: to_qkv -> (q, k, v, q_diff, k_diff)
+                # self-attention differential: to_qkv \u2192 (q, k, v, q_diff, k_diff)
                 q, k, v, q_diff, k_diff = self.to_qkv(x).chunk(5, dim=-1)
                 q, k, v, q_diff, k_diff = map(
                     lambda t: rearrange(t, 'b n (h d) -> b h n d', h=h),
@@ -575,7 +575,7 @@ class TransformerBlock(nn.Module):
             # SA3 style: learnable per-block additive bias; global_cond is pre-projected to (B, dim*6)
             self.to_scale_shift_gate = nn.Parameter(torch.empty(dim * 6, device=device, dtype=dtype))
         elif global_cond_dim is not None:
-            # SA1 style: per-block MLP projects global_cond -> (B, dim*6)
+            # SA1 style: per-block MLP projects global_cond \u2192 (B, dim*6)
             self.to_scale_shift_gate = nn.Sequential(
                 nn.SiLU(),
                 operations.Linear(global_cond_dim, dim * 6, bias=False, device=device, dtype=dtype)
@@ -709,7 +709,7 @@ class ContinuousTransformer(nn.Module):
         if num_memory_tokens > 0:
             self.memory_tokens = nn.Parameter(torch.empty(num_memory_tokens, dim, device=device, dtype=dtype))
 
-        # Shared global-cond embedder (SA3 style): projects (B, global_cond_dim) -> (B, dim*6)
+        # Shared global-cond embedder (SA3 style): projects (B, global_cond_dim) \u2192 (B, dim*6)
         self.global_cond_embedder = None
         if global_cond_shared_embed and global_cond_dim is not None:
             self.global_cond_embedder = nn.Sequential(

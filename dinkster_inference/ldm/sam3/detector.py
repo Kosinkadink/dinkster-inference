@@ -9,7 +9,7 @@ from torchvision.ops import roi_align
 
 from dinkster_inference.ldm.modules.attention import optimized_attention
 from dinkster_inference.ldm.sam3.tracker import SAM3Tracker, SAM31Tracker
-from dinkster_inference.ldm.sam3.sam import SAM3VisionBackbone
+from dinkster_inference.ldm.sam3.sam import SAM3VisionBackbone  # noqa: used in __init__
 from dinkster_inference.ldm.sam3.sam import MLP, PositionEmbeddingSine
 
 TRACKER_CLASSES = {"SAM3": SAM3Tracker, "SAM31": SAM31Tracker}
@@ -155,7 +155,7 @@ class TransformerDecoder(nn.Module):
         ])
         self.norm = operations.LayerNorm(d_model, device=device, dtype=dtype)
         self.query_embed = operations.Embedding(num_queries, d_model, device=device, dtype=dtype)
-        self.reference_points = operations.Embedding(num_queries, 4, device=device, dtype=dtype) # Reference points: Embedding(num_queries, 4) — learned anchor boxes
+        self.reference_points = operations.Embedding(num_queries, 4, device=device, dtype=dtype) # Reference points: Embedding(num_queries, 4) \u2014 learned anchor boxes
         self.ref_point_head = MLP(d_model * 2, d_model, d_model, 2, device=device, dtype=dtype, operations=operations) # ref_point_head input: 512 (4 coords * 128 sine features each)
         self.bbox_embed = MLP(d_model, d_model, 4, 3, device=device, dtype=dtype, operations=operations)
 
@@ -596,7 +596,7 @@ class SAM3Model(nn.Module):
                 new_det_thresh=new_det_thresh, max_objects=max_objects,
                 detect_interval=detect_interval, backbone_obj=bb, pbar=pbar,
                 target_device=target_device, target_dtype=target_dtype)
-        # SAM3 (non-multiplex) — no detection support, requires initial masks
+        # SAM3 (non-multiplex) \u2014 no detection support, requires initial masks
         if initial_masks is None:
             raise ValueError("SAM3 (non-multiplex) requires initial_mask for video tracking")
         return self.tracker.track_video(backbone_fn, images, initial_masks, pbar=pbar, backbone_obj=bb,

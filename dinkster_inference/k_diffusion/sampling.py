@@ -1261,7 +1261,7 @@ def sample_ipndm_v(model, x, sigmas, extra_args=None, callback=None, disable=Non
             h_n_2 = (t_steps[i-1] - t_steps[i-2])
             h_n_3 = (t_steps[i-2] - t_steps[i-3])
             temp1 = (1 - h_n / (3 * (h_n + h_n_1)) * (h_n * (h_n + h_n_1)) / (h_n_1 * (h_n_1 + h_n_2))) / 2
-            temp2 = ((1 - h_n / (3 * (h_n + h_n_1))) / 2 + (1 - h_n / (2 * (h_n + h_n_1))) * h_n / (6 * (h_n + h_n_1 + h_n_2))) \
+            temp2 = ((1 - h_n / (3 * (h_n + h_n_1))) / 2 + (1 - h_n / (2 * (h_n + h_n_1))) * h_n / (6 * (h_n + h_n_1 + h_n_2)))\
                    * (h_n * (h_n + h_n_1) * (h_n + h_n_1 + h_n_2)) / (h_n_1 * (h_n_1 + h_n_2) * (h_n_1 + h_n_2 + h_n_3))
             coeff1 = (2 + (h_n / h_n_1)) / 2 + temp1 + temp2
             coeff2 = -(h_n / h_n_1) / 2 - (1 + h_n_1 / h_n_2) * temp1 - (1 + (h_n_1 / h_n_2) + (h_n_1 * (h_n_1 + h_n_2) / (h_n_2 * (h_n_2 + h_n_3)))) * temp2
@@ -1905,7 +1905,7 @@ def sample_sa_solver(model, x, sigmas, extra_args=None, callback=None, disable=F
 
 @torch.no_grad()
 def sample_sa_solver_pece(model, x, sigmas, extra_args=None, callback=None, disable=False, tau_func=None, s_noise=1.0, noise_sampler=None, predictor_order=3, corrector_order=4, simple_order_2=False):
-    """Stochastic Adams Solver with PECE (Predict–Evaluate–Correct–Evaluate) mode (NeurIPS 2023)."""
+    'Stochastic Adams Solver with PECE (Predict\u2013Evaluate\u2013Correct\u2013Evaluate) mode (NeurIPS 2023).'
     return sample_sa_solver(model, x, sigmas, extra_args=extra_args, callback=callback, disable=disable, tau_func=tau_func, s_noise=s_noise, noise_sampler=noise_sampler, predictor_order=predictor_order, corrector_order=corrector_order, use_pece=True, simple_order_2=simple_order_2)
 
 
@@ -1939,7 +1939,7 @@ def sample_ar_video(model, x, sigmas, extra_args=None, callback=None, disable=No
         raise TypeError(
             "ar_video sampler requires a Causal-WAN compatible model whose diffusion_model "
             "exposes init_kv_caches() and init_crossattn_caches(). The loaded checkpoint "
-            "does not support this interface — choose a different sampler."
+            'does not support this interface \u2014 choose a different sampler.'
         )
 
     seed = extra_args.get("seed", 0)

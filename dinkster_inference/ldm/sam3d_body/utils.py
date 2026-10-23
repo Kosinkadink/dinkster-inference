@@ -1,6 +1,6 @@
 # The bbox/affine math (xyxy<->cs, get_warp_matrices) is the standard
 # top-down pose-estimation crop pipeline from MMPose (Apache 2.0):
-# https://github.com/open-mmlab/mmpose — same algorithm as UDP (CVPR 2020).
+# https://github.com/open-mmlab/mmpose \u2014 same algorithm as UDP (CVPR 2020).
 
 from typing import Dict, Tuple
 

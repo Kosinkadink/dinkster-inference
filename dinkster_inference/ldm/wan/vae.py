@@ -164,7 +164,7 @@ class ResidualBlock(nn.Module):
             CausalConv3d(in_dim, out_dim, 3, padding=1),
             RMS_norm(out_dim, images=False), nn.SiLU(), nn.Dropout(dropout),
             CausalConv3d(out_dim, out_dim, 3, padding=1))
-        self.shortcut = CausalConv3d(in_dim, out_dim, 1) \
+        self.shortcut = CausalConv3d(in_dim, out_dim, 1)\
             if in_dim != out_dim else nn.Identity()
 
     def forward(self, x, feat_cache=None, feat_idx=[0], final=False):
@@ -467,7 +467,7 @@ class WanVAE(nn.Module):
         feat_map = None
         if iter_ > 1:
             feat_map = [None] * count_cache_layers(self.encoder)
-        ## 对encode输入的x，按时间拆分为1、2、2、2....(总帧数先按4N+1向下取整)
+        ## \u5bf9encode\u8f93\u5165\u7684x\uff0c\u6309\u65f6\u95f4\u62c6\u5206\u4e3a1\u30012\u30012\u30012....(\u603b\u5e27\u6570\u5148\u63094N+1\u5411\u4e0b\u53d6\u6574)
         for i in range(iter_):
             conv_idx = [0]
             if i == 0:

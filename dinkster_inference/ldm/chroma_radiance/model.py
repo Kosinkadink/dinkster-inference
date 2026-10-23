@@ -336,7 +336,7 @@ class ChromaRadiance(Chroma):
 
         out = self.forward_nerf(img, img_out, params)[:, :, :h, :w]
 
-        # If x0 variant → v-pred, just return this instead
+        # If x0 variant \u2192 v-pred, just return this instead
         if hasattr(self, "__x0__"):
             out = self._apply_x0_residual(out, img, timestep)
         return out

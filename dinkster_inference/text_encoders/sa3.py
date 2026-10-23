@@ -144,8 +144,7 @@ class T5GemmaBody(nn.Module):
 
 
 class T5GemmaModel(nn.Module):
-    """Top-level model class passed to SDClipModel as model_class.
-    Module layout: self.model.encoder.* → matches checkpoint keys model.encoder.*"""
+    'Top-level model class passed to SDClipModel as model_class.\n    Module layout: self.model.encoder.* \u2192 matches checkpoint keys model.encoder.*'
 
     def __init__(self, config_dict, dtype, device, operations):
         super().__init__()

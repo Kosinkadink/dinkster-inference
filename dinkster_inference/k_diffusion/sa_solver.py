@@ -8,27 +8,7 @@ import torch
 
 
 def compute_exponential_coeffs(s: torch.Tensor, t: torch.Tensor, solver_order: int, tau_t: float) -> torch.Tensor:
-    """Compute (1 + tau^2) * integral of exp((1 + tau^2) * x) * x^p dx from s to t with exp((1 + tau^2) * t) factored out, using integration by parts.
-
-    Integral of exp((1 + tau^2) * x) * x^p dx
-        = product_terms[p] - (p / (1 + tau^2)) * integral of exp((1 + tau^2) * x) * x^(p-1) dx,
-    with base case p=0 where integral equals product_terms[0].
-
-    where
-        product_terms[p] = x^p * exp((1 + tau^2) * x) / (1 + tau^2).
-
-    Construct a recursive coefficient matrix following the above recursive relation to compute all integral terms up to p = (solver_order - 1).
-    Return coefficients used by the SA-Solver in data prediction mode.
-
-    Args:
-        s: Start time s.
-        t: End time t.
-        solver_order: Current order of the solver.
-        tau_t: Stochastic strength parameter in the SDE.
-
-    Returns:
-        Exponential coefficients used in data prediction, with exp((1 + tau^2) * t) factored out, ordered from p=0 to p=solver_order−1, shape (solver_order,).
-    """
+    'Compute (1 + tau^2) * integral of exp((1 + tau^2) * x) * x^p dx from s to t with exp((1 + tau^2) * t) factored out, using integration by parts.\n\n    Integral of exp((1 + tau^2) * x) * x^p dx\n        = product_terms[p] - (p / (1 + tau^2)) * integral of exp((1 + tau^2) * x) * x^(p-1) dx,\n    with base case p=0 where integral equals product_terms[0].\n\n    where\n        product_terms[p] = x^p * exp((1 + tau^2) * x) / (1 + tau^2).\n\n    Construct a recursive coefficient matrix following the above recursive relation to compute all integral terms up to p = (solver_order - 1).\n    Return coefficients used by the SA-Solver in data prediction mode.\n\n    Args:\n        s: Start time s.\n        t: End time t.\n        solver_order: Current order of the solver.\n        tau_t: Stochastic strength parameter in the SDE.\n\n    Returns:\n        Exponential coefficients used in data prediction, with exp((1 + tau^2) * t) factored out, ordered from p=0 to p=solver_order\u22121, shape (solver_order,).\n    '
     tau_mul = 1 + tau_t ** 2
     h = t - s
     p = torch.arange(solver_order, dtype=s.dtype, device=s.device)
