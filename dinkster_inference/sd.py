@@ -28,6 +28,7 @@ import dinkster_inference.ldm.hunyuan_video.vae
 import dinkster_inference.ldm.mmaudio.vae.autoencoder
 import dinkster_inference.ldm.audio.vae_sa3
 import dinkster_inference.ldm.minimax_music.dav
+import dinkster_inference.ldm.modules.diffusionmodules.model
 import dinkster_inference.pixel_space_convert
 import dinkster_inference.weight_adapter
 import yaml
@@ -687,11 +688,13 @@ class VAE:
 
                     if 'bn.running_mean' in sd:
                         ddconfig["batch_norm_latent"] = True
+                        ddconfig["fused_norm"] = True
+                        self.working_dtypes = [torch.float16, torch.bfloat16, torch.float32]  # activations peak near 300
                         self.downscale_ratio *= 2
                         self.upscale_ratio *= 2
                         self.latent_channels *= 4
                         old_memory_used_decode = self.memory_used_decode
-                        self.memory_used_decode = lambda shape, dtype: old_memory_used_decode(shape, dtype) *  4.0
+                        self.memory_used_decode = lambda shape, dtype: old_memory_used_decode(shape, dtype) * (1.0 if dinkster_inference.ldm.modules.diffusionmodules.model.fused_norm_served(self.device, dtype) else 4.0)
 
                     decoder_ch = sd['decoder.conv_in.weight'].shape[0] // ddconfig['ch_mult'][-1]
                     if decoder_ch != ddconfig['ch']:

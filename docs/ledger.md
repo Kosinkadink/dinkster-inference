@@ -1,11 +1,12 @@
 # Fork ledger
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`bef11fcbfa8d772678e2ad00b1294c63eb3e5da7`.
+`d07dff4565ea9804277fff8cdfa0c817e08c3d44`.
 
 | File or subsystem | Tier | Reason |
 | --- | --- | --- |
 | `dinkster_inference/` except entries below | kept upstream | ComfyUI inference implementation, mechanically renamed from `comfy`, rewritten to import `dinkster_inference`, and source-normalized to ASCII without runtime changes |
+| `dinkster_inference/ldm/modules/diffusionmodules/model.py`, Flux2 VAE detection in `dinkster_inference/sd.py` | kept upstream | Retains fused normalization and row-strip Flux2 VAE execution on served devices, with the legacy path on CPU and other unserved configurations; uses the existing quant_ops bridge and comfy-kitchen 0.2.40 APIs without changing dependency pins or the fork's model loading ownership |
 | `dinkster_inference/cli_args.py` assets flags | changed by us | Retains the existing inert `--enable-assets` and `--enable-asset-hashing` options; omits the upstream `--disable-assets` and `--previews-directory` options and assets-default help changes because the assets application is not shipped |
 | `dinkster_inference/hooks.py` | changed by us | Owns `conditioning_set_values` instead of importing the deleted application helper |
 | `dinkster_inference/window_plan.py` | ours only | Compiles layered media-axis window declarations into canonical joint windows with deterministic weighted merge semantics |
