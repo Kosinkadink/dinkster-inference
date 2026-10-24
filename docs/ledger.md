@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`fb3befd168731438f88bc96e0920a538e8649878`.
+`dea870e1a36614b3614c0008a820734d0fecdf4f`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -10,6 +10,9 @@ upstream `hooks.py` imports it. The `comfy` package aliases the installed librar
 Omitted application paths: ComfyUI's server, application, nodes, extras,
 execution, middleware, frontend, assets, API and model directories, and tests
 outside `tests-unit/comfy_test/` and `tests-unit/comfy_quant/`.
+
+The Branch node in `comfy_extras/nodes_logic.py` is omitted with the
+application nodes; it does not change the inference library.
 
 The console-tip implementation in `app/product_tips.py`, its
 `tests-unit/app_test/product_tips_test.py` coverage, and changes in `main.py`
