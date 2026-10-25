@@ -7,6 +7,13 @@ The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
 upstream `hooks.py` imports it. The `comfy` package aliases the installed library.
 
+Deliberate library additions in `utils.load_torch_file`: state dictionaries
+retain storage provenance through `storage.annotate_state_dict`, and files
+without a `.safetensors` or `.sft` suffix use a bounded nine-byte safetensors
+header probe before parser dispatch. Safetensors stored under digest paths or
+misnamed `.ckpt`, `.pt`, or `.bin` therefore load where upstream calls
+`torch.load` and fails. Existing suffix dispatch and parser policies are unchanged.
+
 Omitted application paths: ComfyUI's server, application, nodes, extras,
 execution, middleware, frontend, assets, API and model directories, and tests
 outside `tests-unit/comfy_test/` and `tests-unit/comfy_quant/`.
