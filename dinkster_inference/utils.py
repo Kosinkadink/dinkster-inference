@@ -193,7 +193,14 @@ def load_torch_file(ckpt, safe_load=False, device=None, return_metadata=False):
     if device is None:
         device = torch.device("cpu")
     metadata = None
-    if ckpt.lower().endswith(".safetensors") or ckpt.lower().endswith(".sft"):
+    is_safetensors = ckpt.lower().endswith((".safetensors", ".sft"))
+    if not is_safetensors:
+        with open(ckpt, "rb") as f:
+            prefix = f.read(9)
+            if len(prefix) == 9:
+                header_size = struct.unpack("<Q", prefix[:8])[0]
+                is_safetensors = 0 < header_size <= _SAFETENSORS_MAX_HEADER_SIZE and header_size <= os.fstat(f.fileno()).st_size - 8 and prefix[8:] == b"{"
+    if is_safetensors:
         try:
             if dinkster_inference.memory_management.aimdo_enabled:
                 sd, metadata = load_safetensors(ckpt)
