@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`19ae172bff6c9e4c738e7f2e00fe087f5b5b46ab`.
+`fe298e4e20f1ff26d30e8639267bbd0b57811390`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -17,6 +17,9 @@ misnamed `.ckpt`, `.pt`, or `.bin` therefore load where upstream calls
 Omitted application paths: ComfyUI's server, application, nodes, extras,
 execution, middleware, frontend, assets, API and model directories, and tests
 outside `tests-unit/comfy_test/` and `tests-unit/comfy_quant/`.
+
+The MOSS model merge node in `comfy_extras/nodes_model_merging_model_specific.py`
+is omitted with the application nodes; it does not change the inference library.
 
 Cloud deployment in `app/comfy_api_env.py`, `app/deploy_to_cloud.py`,
 `comfy_api/feature_flags.py`, `main.py`, `openapi.yaml`, `server.py`, and
