@@ -1,11 +1,14 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`cdf272f3514353aab04dc2d9fceef57a260dc156`.
+`2fb8cabd40be44d1e3b0d6f4f9100aa29aa9f881`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
 upstream `hooks.py` imports it. The `comfy` package aliases the installed library.
+
+The application-only `comfyui-frontend-package` dependency is omitted;
+its upstream bump to 1.57.4 does not change the library requirements.
 
 The fork's library README replaces upstream application installation guidance;
 upstream Huawei Ascend branding changes do not apply to that document.
