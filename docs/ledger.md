@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`2fb8cabd40be44d1e3b0d6f4f9100aa29aa9f881`.
+`de37ca299e78be5d8706b73963df531c5bc52c3f`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -27,6 +27,9 @@ outside `tests-unit/comfy_test/` and `tests-unit/comfy_quant/`.
 Proxy environment handling in `comfy_api_nodes/` and its
 `tests-unit/comfy_api_nodes_test/comfy_cloud_test.py` coverage are omitted
 with the partner-node application clients.
+
+Kling 4.0 API schemas and video nodes in `comfy_api_nodes/apis/kling.py` and
+`comfy_api_nodes/nodes_kling.py` are omitted with those partner-node clients.
 
 The MOSS model merge node in `comfy_extras/nodes_model_merging_model_specific.py`
 is omitted with the application nodes; it does not change the inference library.
