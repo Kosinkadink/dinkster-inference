@@ -1,11 +1,14 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`0b05cd8a3683cbf0c291b1472bb8b64da41de9ae`.
+`cdf272f3514353aab04dc2d9fceef57a260dc156`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
 upstream `hooks.py` imports it. The `comfy` package aliases the installed library.
+
+The fork's library README replaces upstream application installation guidance;
+upstream Huawei Ascend branding changes do not apply to that document.
 
 Deliberate library additions in `utils.load_torch_file`: state dictionaries
 retain storage provenance through `storage.annotate_state_dict`, and files
