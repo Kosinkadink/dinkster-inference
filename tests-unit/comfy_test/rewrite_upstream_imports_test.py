@@ -75,7 +75,6 @@ cli = importlib.import_module('{first}.cli_args')
 cli.args.cpu = True
 if not {source_first!r}:
     sys.path.insert(0, {str(tmp_path)!r})
-sys.path.append(None)
 for suffix in ('cli_args', 'model_patcher', 'samplers', 'sd', 'supported_models', 'ldm.modules.attention'):
     first = importlib.import_module('{first}.' + suffix)
     canonical = importlib.import_module('dinkster_inference.' + suffix)
@@ -87,6 +86,7 @@ for suffix in ('cli_args', 'model_patcher', 'samplers', 'sd', 'supported_models'
 assert (importlib.import_module('comfy').model_patcher.ModelPatcher is
         importlib.import_module('dinkster_inference.model_patcher').ModelPatcher)
 assert importlib.import_module('comfy.supported_models').comfy is importlib.import_module('comfy')
+sys.path.append(None)
 assert importlib.import_module('comfy.deploy_environment').environment == 'source checkout'
 assert importlib.import_module('comfy.application').args is cli.args
 assert importlib.import_module('comfy.ldm.application').environment == 'nested source checkout'
