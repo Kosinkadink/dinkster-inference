@@ -1,11 +1,14 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`e06965c4d6e07a546b91a70b4c6a0ec54bbdceb8`.
+`426f5eea52a7ece1dd599fff4cb6cd1f352ddd24`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
 upstream `hooks.py` imports it. The `comfy` package aliases the installed library.
+
+Upstream's ComfyUI 0.43.0 application version bump does not change the
+fork-owned package metadata or the retained `comfyui_version.py` file.
 
 The application-only `comfyui-workflow-templates` dependency is omitted;
 its upstream bump to 0.11.97 does not change the library requirements.
