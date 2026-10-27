@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from unittest.mock import patch
 
 import pytest
@@ -673,17 +672,13 @@ def test_seedvr2_batch_runs_a_video_at_a_time():
     torch.testing.assert_close(vae.slicing_encode(z), z[:, :3], rtol=0, atol=0)
     assert set(seen) == {1}
 
-
-def test_seedvr2_encode_accepts_the_chunked_io_device_kwarg():
-    """``comfy_has_chunked_io`` is one flag for both directions: sd.py leaves the pixels where they
-    are and calls ``encode(x, device=...)``, so encode must take it and move the data itself."""
-    sig = inspect.signature(vae_mod.VideoAutoencoderKLWrapper.encode)
-    assert "device" in sig.parameters, "encode must accept the chunked-io device kwarg"
-    assert sig.parameters["device"].default is None, "device must be optional"
-    # the wrapper claims the protocol, so both sides of it have to exist
-    assert vae_mod.VideoAutoencoderKLWrapper.comfy_has_chunked_io is True
-    assert hasattr(vae_mod.VideoAutoencoderKLWrapper, "decode_output_shape")
-    assert "output_buffer" in inspect.signature(vae_mod.VideoAutoencoderKLWrapper.decode).parameters
+    pixels = torch.randn(2, 6, 1, 4, 4)
+    torch.testing.assert_close(vae.encode(pixels, device=torch.device("cpu")), pixels[:, :2, 0], rtol=0, atol=0)
+    assert vae.device == torch.device("cpu")
+    torch.testing.assert_close(vae.encode(pixels), pixels[:, :2, 0], rtol=0, atol=0)
+    latent = vae._unscaled(z)
+    assert vae.decode(z, output_buffer=out) is out
+    torch.testing.assert_close(out, latent[:, :3], rtol=0, atol=0)
 
 
 def test_seedvr2_decode_output_shape_matches_decode():

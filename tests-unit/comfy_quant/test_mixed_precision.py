@@ -63,6 +63,11 @@ class TestMixedPrecisionOps(unittest.TestCase):
 
         self.assertEqual(output.shape, (5, 40))
         self.assertEqual(output.dtype, torch.bfloat16)
+        expected = input_tensor
+        for layer in (model.layer1, model.layer2):
+            expected = torch.nn.functional.relu(torch.nn.functional.linear(expected, layer.weight, layer.bias))
+        expected = torch.nn.functional.linear(expected, model.layer3.weight, model.layer3.bias)
+        torch.testing.assert_close(output, expected, rtol=0, atol=0)
 
     def test_mixed_precision_load(self):
         """Test loading a mixed precision model from state dict"""
@@ -165,6 +170,7 @@ class TestMixedPrecisionOps(unittest.TestCase):
 
     def test_weight_function_compatibility(self):
         """Test that weight_function (LoRA) works with quantized layers"""
+        torch.manual_seed(123)
         # Configure FP8 quantization
         layer_quant_config = {
             "layer1": {
@@ -189,19 +195,25 @@ class TestMixedPrecisionOps(unittest.TestCase):
         model = SimpleModel(operations=ops.mixed_precision_ops({}))
         model.load_state_dict(state_dict, strict=False)
 
-        # Add a weight function (simulating LoRA)
-        # This should trigger dequantization during forward pass
+        for layer in (model.layer1, model.layer2, model.layer3):
+            layer.weight_function = []
+            layer.bias_function = []
+
+        # A fixed patch distinguishes omitted, repeated and correctly applied LoRA.
         def apply_lora(weight):
-            lora_delta = torch.randn_like(weight) * 0.01
-            return weight + lora_delta
+            return weight + 0.5
 
         model.layer1.weight_function = [apply_lora]
 
-        # Forward pass should work with LoRA (triggers weight_function path)
         input_tensor = torch.randn(5, 10, dtype=torch.bfloat16)
         output = model(input_tensor)
 
         self.assertEqual(output.shape, (5, 40))
+        expected = torch.nn.functional.linear(input_tensor, model.layer1.weight.dequantize() + 0.5, model.layer1.bias)
+        expected = torch.nn.functional.relu(expected)
+        expected = torch.nn.functional.relu(torch.nn.functional.linear(expected, model.layer2.weight, model.layer2.bias))
+        expected = torch.nn.functional.linear(expected, model.layer3.weight, model.layer3.bias)
+        torch.testing.assert_close(output, expected, rtol=0, atol=0)
 
     def test_error_handling_unknown_format(self):
         """Test that unknown formats raise error"""

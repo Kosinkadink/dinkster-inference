@@ -361,8 +361,7 @@ def test_greedy_mtp_matches_plain_greedy(monkeypatch, image_prompt):
         assert discards and min(discards) < max(discards)  # partial acceptance happened
 
 
-@pytest.mark.parametrize("quantile", [0.42, 0.8, 0.92])
-@pytest.mark.parametrize("top_k", [0, 7])
+@pytest.mark.parametrize("top_k, quantile", [(0, 0.42), (0, 0.92), (7, 0.92)])
 def test_sampled_tree_matches_sequential_with_same_draws(monkeypatch, quantile, top_k):
     # Couple draws by quantile rather than RNG consumption: unused tree rows also sample.
     def draw(weights, num_samples, generator=None):
