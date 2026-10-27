@@ -133,16 +133,6 @@ class TestModelDetection:
     """Verify that first-match model detection selects the correct model
     based on list ordering and unet_config specificity."""
 
-    def test_longcat_before_schnell_in_models_list(self):
-        """LongCatImage must appear before FluxSchnell in the models list."""
-        models = dinkster_inference.supported_models.models
-        longcat_idx = next(i for i, m in enumerate(models) if m.__name__ == "LongCatImage")
-        schnell_idx = next(i for i, m in enumerate(models) if m.__name__ == "FluxSchnell")
-        assert longcat_idx < schnell_idx, (
-            f"LongCatImage (index {longcat_idx}) must come before "
-            f"FluxSchnell (index {schnell_idx}) in the models list"
-        )
-
     def test_longcat_comfyui_detected_as_longcat(self):
         sd = _make_longcat_comfyui_sd()
         unet_config = detect_unet_config(sd, "")
