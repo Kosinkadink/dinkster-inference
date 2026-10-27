@@ -1,11 +1,14 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`de37ca299e78be5d8706b73963df531c5bc52c3f`.
+`7a9c6b595f49aa9c2691d0a11e2fbccf10670589`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
 upstream `hooks.py` imports it. The `comfy` package aliases the installed library.
+
+The application-only `comfyui-embedded-docs` dependency is omitted;
+its upstream bump to 0.5.15 does not change the library requirements.
 
 The application-only `comfyui-frontend-package` dependency is omitted;
 its upstream bump to 1.57.4 does not change the library requirements.
