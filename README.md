@@ -3,7 +3,9 @@
 This distribution packages upstream ComfyUI's inference library as
 `dinkster_inference`. The `comfy` import name aliases the same modules, not a
 second instance of model-management state. ComfyUI's application, server and
-node packages are not distributed here.
+node packages are not distributed here. Modules absent from inference can
+resolve from a ComfyUI checkout's `comfy/` directory on `sys.path`; inference
+modules always take precedence over checkout modules.
 
 ```bash
 python -m pip install .

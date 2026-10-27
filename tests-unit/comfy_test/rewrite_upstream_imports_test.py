@@ -54,12 +54,27 @@ def test_rewrite_preserves_unicode_values_with_ascii_source(tmp_path):
 
 
 @pytest.mark.parametrize("first", ["comfy", "dinkster_inference"])
-def test_installed_alias_shares_modules_and_state(first):
+@pytest.mark.parametrize("source_first", [True, False])
+def test_installed_alias_shares_modules_and_state(first, source_first, tmp_path):
+    source = tmp_path / "comfy"
+    source.mkdir()
+    (source / "cli_args.py").write_text("raise AssertionError('source inference module loaded')\n")
+    (source / "sd.py").write_text("raise AssertionError('source model loader loaded')\n")
+    (source / "deploy_environment.py").write_text("environment = 'source checkout'\n")
+    (source / "application").mkdir()
+    (source / "application" / "__init__.py").write_text("from .settings import args\n")
+    (source / "application" / "settings.py").write_text("from comfy.cli_args import args\n")
+    (source / "ldm").mkdir()
+    (source / "ldm" / "application.py").write_text("environment = 'nested source checkout'\n")
     program = f"""
 import importlib
 import sys
+if {source_first!r}:
+    sys.path.insert(0, {str(tmp_path)!r})
 cli = importlib.import_module('{first}.cli_args')
 cli.args.cpu = True
+if not {source_first!r}:
+    sys.path.insert(0, {str(tmp_path)!r})
 for suffix in ('cli_args', 'model_patcher', 'samplers', 'sd', 'supported_models', 'ldm.modules.attention'):
     first = importlib.import_module('{first}.' + suffix)
     canonical = importlib.import_module('dinkster_inference.' + suffix)
@@ -71,6 +86,18 @@ for suffix in ('cli_args', 'model_patcher', 'samplers', 'sd', 'supported_models'
 assert (importlib.import_module('comfy').model_patcher.ModelPatcher is
         importlib.import_module('dinkster_inference.model_patcher').ModelPatcher)
 assert importlib.import_module('comfy.supported_models').comfy is importlib.import_module('comfy')
+sys.path.append(None)
+assert importlib.import_module('comfy.deploy_environment').environment == 'source checkout'
+assert importlib.import_module('comfy.application').args is cli.args
+assert importlib.import_module('comfy.ldm.application').environment == 'nested source checkout'
+assert importlib.util.find_spec('dinkster_inference.deploy_environment') is None
+for missing in ('comfy.not_provided', 'comfy.application.not_provided', 'comfy.ldm.not_provided'):
+    try:
+        importlib.import_module(missing)
+    except ModuleNotFoundError as exc:
+        assert exc.name == missing
+    else:
+        raise AssertionError(missing + ' unexpectedly resolved')
 """
     subprocess.run([sys.executable, "-I", "-c", program], check=True,
                    env={**os.environ, "CUDA_VISIBLE_DEVICES": ""})
