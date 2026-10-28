@@ -11,6 +11,28 @@ modules always take precedence over checkout modules.
 python -m pip install .
 ```
 
+## Releases
+
+Consumers pin an exact `dinkster-inference==X.Y.Z` release in package metadata
+and record its PyPI wheel hashes in their lockfile. Before the first PyPI
+publication of 0.1.0, build a local wheel with `python -m build`.
+
+The upstream sync owner updates `project.version` when landed inference changes
+need a new release and validates that commit before requesting publication.
+An authorized maintainer pushes the matching `vX.Y.Z` tag from the landed
+commit. `.github/workflows/release.yml` builds the wheel and sdist, checks
+their metadata, and publishes those same artifacts using trusted publishing.
+Branches and pull requests build without publishing. After publication the
+sync owner updates Dinkster's exact requirement and lock together; setup
+scripts do not select a separate inference commit.
+
+The repository owner must register the PyPI project `dinkster-inference` with
+a trusted publisher for owner `Kosinkadink`, repository `dinkster-inference`,
+workflow `release.yml`, environment `pypi`. Before publishing, protect that
+GitHub environment with required owner approval and restrict deployment to
+version tags. Publication requires the owner's authorization; no stored PyPI
+API token is used.
+
 As in upstream ComfyUI, CPU callers select CPU execution before importing model
 management or loaders:
 
