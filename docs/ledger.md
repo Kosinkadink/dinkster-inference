@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`e1df394db644987bfbdd05c887a78b9115d49261`.
+`afa6461c182d01c303d10784bb85605dea3cfe8a`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -32,6 +32,10 @@ misnamed `.ckpt`, `.pt`, or `.bin` therefore load where upstream calls
 Omitted application paths: ComfyUI's server, application, nodes, extras,
 execution, middleware, frontend, assets, API and model directories, and tests
 outside `tests-unit/comfy_test/` and `tests-unit/comfy_quant/`.
+
+Cached pinned frontend selection in `app/frontend_management.py` and its
+`tests-unit/app_test/frontend_manager_test.py` coverage are omitted with the
+application frontend manager.
 
 Proxy environment handling in `comfy_api_nodes/` and its
 `tests-unit/comfy_api_nodes_test/comfy_cloud_test.py` coverage are omitted
