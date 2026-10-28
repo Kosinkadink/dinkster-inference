@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`c7bd15c28213348d72042ba0675747f1ebbed95f`.
+`35060f0156181ae78a86b10f098f67ce8e83697f`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -53,6 +53,10 @@ Veed API schemas and video nodes in `comfy_api_nodes/apis/veed.py` and
 
 The MOSS model merge node in `comfy_extras/nodes_model_merging_model_specific.py`
 is omitted with the application nodes; it does not change the inference library.
+
+The MiniMax-H3 latent upscaler model is retained in the library. Its loader in
+`comfy_extras/nodes_hunyuan.py` and node in `comfy_extras/nodes_minimax_h3.py`
+are omitted with the application nodes.
 
 Cloud deployment in `app/comfy_api_env.py`, `app/deploy_to_cloud.py`,
 `comfy_api/feature_flags.py`, `main.py`, `openapi.yaml`, `server.py`, and
