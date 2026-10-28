@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`49abb64b25ff72bad792f1cd4bc977e6545cb98c`.
+`08cf0284ff45723aa67841c80cabb0e3cb50c9d7`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -11,7 +11,7 @@ Upstream's ComfyUI 0.43.0 application version bump does not change the
 fork-owned package metadata or the retained `comfyui_version.py` file.
 
 The application-only `comfyui-workflow-templates` dependency is omitted;
-its upstream bump to 0.11.97 does not change the library requirements.
+its upstream bump to 0.11.98 does not change the library requirements.
 
 The application-only `comfyui-embedded-docs` dependency is omitted;
 its upstream bump to 0.5.15 does not change the library requirements.
@@ -39,6 +39,9 @@ with the partner-node application clients.
 
 Kling 4.0 API schemas and video nodes in `comfy_api_nodes/apis/kling.py` and
 `comfy_api_nodes/nodes_kling.py` are omitted with those partner-node clients.
+
+Veed API schemas and video nodes in `comfy_api_nodes/apis/veed.py` and
+`comfy_api_nodes/nodes_veed.py` are omitted with those partner-node clients.
 
 The MOSS model merge node in `comfy_extras/nodes_model_merging_model_specific.py`
 is omitted with the application nodes; it does not change the inference library.
