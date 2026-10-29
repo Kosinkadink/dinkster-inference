@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`0df1646a9cd71d4c990a87014fb37797a2956ead`.
+`fd7639f477050e5c25b68fc38a9c2a6b6d988211`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -50,6 +50,10 @@ BFL Flux Video Upscale V2 resolution targets and legacy-node handling in
 
 Veed API schemas and video nodes in `comfy_api_nodes/apis/veed.py` and
 `comfy_api_nodes/nodes_veed.py` are omitted with those partner-node clients.
+
+WaveSpeed FlashVSR and image upscale router migration, schemas, and shared
+router submit/poll/cancel helpers in `comfy_api_nodes/` are omitted with
+those partner-node clients.
 
 The MOSS model merge node in `comfy_extras/nodes_model_merging_model_specific.py`
 is omitted with the application nodes; it does not change the inference library.
