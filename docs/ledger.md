@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`fd7639f477050e5c25b68fc38a9c2a6b6d988211`.
+`8c4f1f240426eb3ffad9791cad52bd9890e9833d`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -11,7 +11,7 @@ Upstream's ComfyUI 0.43.0 application version bump does not change the
 fork-owned package metadata or the retained `comfyui_version.py` file.
 
 The application-only `comfyui-workflow-templates` dependency is omitted;
-its upstream bump to 0.11.98 does not change the library requirements.
+its upstream bump to 0.11.100 does not change the library requirements.
 
 The application-only `comfyui-embedded-docs` dependency is omitted;
 its upstream bump to 0.5.15 does not change the library requirements.
@@ -54,6 +54,12 @@ Veed API schemas and video nodes in `comfy_api_nodes/apis/veed.py` and
 WaveSpeed FlashVSR and image upscale router migration, schemas, and shared
 router submit/poll/cancel helpers in `comfy_api_nodes/` are omitted with
 those partner-node clients.
+
+Ideogram 4.5 Precise Edit region editing in `comfy_api_nodes/apis/ideogram.py`
+and `comfy_api_nodes/nodes_ideogram.py` is omitted with those partner-node clients.
+
+MiniMax-H3 context-window support is retained in the library. Its node in
+`comfy_extras/nodes_context_windows.py` is omitted with the application nodes.
 
 The MOSS model merge node in `comfy_extras/nodes_model_merging_model_specific.py`
 is omitted with the application nodes; it does not change the inference library.
