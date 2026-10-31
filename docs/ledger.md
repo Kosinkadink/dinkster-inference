@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`b5a432157de6b8884f81104cd02926adf4d597e4`.
+`fbca05a62e23c1b08b6e77f408db2742127a9929`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -60,6 +60,10 @@ and `comfy_api_nodes/nodes_ideogram.py` is omitted with those partner-node clien
 
 MiniMax-H3 context-window support is retained in the library. Its node in
 `comfy_extras/nodes_context_windows.py` is omitted with the application nodes.
+
+VAE cloning is retained in the library. The VAE compute-dtype node in
+`comfy_extras/nodes_model_advanced.py` and VAE device-selection changes in
+`comfy_extras/nodes_multigpu.py` are omitted with the application nodes.
 
 The MOSS model merge node in `comfy_extras/nodes_model_merging_model_specific.py`
 is omitted with the application nodes; it does not change the inference library.
