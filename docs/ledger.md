@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`fbca05a62e23c1b08b6e77f408db2742127a9929`.
+`6ea48ffc21d2a0c9be0df79f08d72b4ecf2d678f`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -50,6 +50,10 @@ BFL Flux Video Upscale V2 resolution targets and legacy-node handling in
 
 Veed API schemas and video nodes in `comfy_api_nodes/apis/veed.py` and
 `comfy_api_nodes/nodes_veed.py` are omitted with those partner-node clients.
+
+Pruna P-Video Upscale schemas and node, plus shared request submission changes,
+in `comfy_api_nodes/apis/pruna.py` and `comfy_api_nodes/nodes_pruna.py` are
+omitted with those partner-node clients.
 
 WaveSpeed FlashVSR and image upscale router migration, schemas, and shared
 router submit/poll/cancel helpers in `comfy_api_nodes/` are omitted with
