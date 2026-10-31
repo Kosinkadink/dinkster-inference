@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`6ea48ffc21d2a0c9be0df79f08d72b4ecf2d678f`.
+`7c4390a6f70cd8eb41014d6af52969397a752fc4`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -53,6 +53,11 @@ Veed API schemas and video nodes in `comfy_api_nodes/apis/veed.py` and
 
 Pruna P-Video Upscale schemas and node, plus shared request submission changes,
 in `comfy_api_nodes/apis/pruna.py` and `comfy_api_nodes/nodes_pruna.py` are
+omitted with those partner-node clients.
+
+MiniMax H3 Max Recast, Extend, Reframe, Insert, Lip Sync and Camera Control
+schemas and nodes, plus related request/reference handling, in
+`comfy_api_nodes/apis/minimax.py` and `comfy_api_nodes/nodes_minimax.py` are
 omitted with those partner-node clients.
 
 WaveSpeed FlashVSR and image upscale router migration, schemas, and shared
