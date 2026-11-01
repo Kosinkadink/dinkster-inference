@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`0dbfd493b4cc604db743c699f0f7ce01348e54a4`.
+`0698f6d7c24ce1790c5e48f42eff3023d92cd4f3`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -96,6 +96,12 @@ parser option is retained for library parity but no console tips are shipped.
 MOSS edit node controls in `comfy_extras/nodes_moss_image.py`, failed-stage
 status in `execution.py`, and `tests/execution/test_execution.py` are also
 application-only; MOSS attention-bias conditioning in the library is retained.
+
+Job-detail execution metadata and current-node metadata for cached outputs in
+`comfy_execution/asset_enrichment.py`, `comfy_execution/jobs.py`, and
+`execution.py`, plus their `tests-unit/execution_test/test_enrich_output.py`,
+`tests/execution/test_execution.py`, and `tests/execution/test_jobs.py` coverage,
+are omitted with the application execution layer.
 
 The following upstream tests within those two directories are omitted because
 they import application modules not distributed by this library:
