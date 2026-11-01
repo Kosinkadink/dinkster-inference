@@ -13,6 +13,11 @@ to ASCII. SAM3D Body imports this packaged PyTorch face landmarker instead of
 the omitted application extras. Face geometry is also available to library
 callers; neither module requires Google's MediaPipe runtime package.
 
+| Carried library path | Upstream path | Reference F |
+| --- | --- | --- |
+| `dinkster_inference/mediapipe/face_landmarker.py` | `comfy_extras/mediapipe/face_landmarker.py` | `bc5f880dbdd43e426077f42ccec53bb577ffee9f` |
+| `dinkster_inference/mediapipe/face_geometry.py` | `comfy_extras/mediapipe/face_geometry.py` | `bc5f880dbdd43e426077f42ccec53bb577ffee9f` |
+
 Upstream's ComfyUI 0.43.0 application version bump does not change the
 fork-owned package metadata or the retained `comfyui_version.py` file.
 
