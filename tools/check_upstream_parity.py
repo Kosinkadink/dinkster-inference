@@ -20,6 +20,7 @@ OMITTED_TESTS = {
     "test_vae_decode_tiled_nested.py",
 }
 INFRASTRUCTURE_TESTS = {
+    "comfy_test/mediapipe_import_test.py",
     "comfy_test/rewrite_upstream_imports_test.py",
     "comfy_test/upstream_sync_test.py",
 }
@@ -43,6 +44,10 @@ def compare(upstream: Path) -> int:
             if path.suffix == ".py":
                 rewrite(path)
             expected[relative] = path.read_bytes()
+        if source == "comfy":
+            for path in (upstream / "comfy_extras/mediapipe").glob("*.py"):
+                rewrite(path)
+                expected[f"mediapipe/{path.name}"] = path.read_bytes()
         actual = {
             path.relative_to(ROOT / target).as_posix(): path.read_bytes()
             for path in (ROOT / target).rglob("*")

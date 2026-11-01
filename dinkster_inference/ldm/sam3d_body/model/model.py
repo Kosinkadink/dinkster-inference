@@ -15,7 +15,7 @@ from ..mhr.mhr_rig import MHRRig
 from ..mhr.mhr_utils import fix_wrist_euler, rotation_angle_difference
 from .transformer import MLP
 from .camera_modules import CameraEncoder, PerspectiveHead
-from comfy_extras.mediapipe.face_landmarker import FaceLandmarker
+from dinkster_inference.mediapipe.face_landmarker import FaceLandmarker
 from ..utils import bbox_xyxy2cs, fix_aspect_ratio, get_warp_matrices, warp_affine_batched, euler_to_rotmat, rotmat_to_euler
 
 # Architecture constants for the released `dinov3-h+` SAM 3D Body checkpoint.
