@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`0698f6d7c24ce1790c5e48f42eff3023d92cd4f3`.
+`6d352802d8f8b9133f664a1757d6c6d26390c335`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -113,6 +113,14 @@ Job-detail execution metadata and current-node metadata for cached outputs in
 `execution.py`, plus their `tests-unit/execution_test/test_enrich_output.py`,
 `tests/execution/test_execution.py`, and `tests/execution/test_jobs.py` coverage,
 are omitted with the application execution layer.
+
+ProRes/MOV encoding and chroma-subsampling controls in
+`comfy_api/latest/_input/video_types.py`,
+`comfy_api/latest/_input_impl/video_types.py`,
+`comfy_api/latest/_util/video_types.py`, and `comfy_extras/nodes_video.py`,
+plus their `tests-unit/comfy_api_test/video_accumulation_test.py` and
+`tests-unit/comfy_api_test/video_bit_depth_test.py` coverage, are omitted
+with the application video API and nodes.
 
 The following upstream tests within those two directories are omitted because
 they import application modules not distributed by this library:
