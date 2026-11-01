@@ -12,6 +12,7 @@ def test_rewrite_preserves_external_gguf_metadata_key(tmp_path):
     source = tmp_path / "source.py"
     source.write_text(
         "import comfy\n"
+        "from comfy_extras.mediapipe.face_landmarker import FaceLandmarker\n"
         "module = comfy.sd\n"
         'target = "comfy.ldm.models.autoencoder.Encoder"\n'
         'field = "comfy.gguf.orig_shape.weight"\n'
@@ -20,6 +21,7 @@ def test_rewrite_preserves_external_gguf_metadata_key(tmp_path):
     assert rewrite(source)
     assert source.read_text() == (
         "import dinkster_inference\n"
+        "from dinkster_inference.mediapipe.face_landmarker import FaceLandmarker\n"
         "module = dinkster_inference.sd\n"
         'target = "dinkster_inference.ldm.models.autoencoder.Encoder"\n'
         'field = "comfy.gguf.orig_shape.weight"\n'
