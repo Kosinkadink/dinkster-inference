@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`ab08f7b2caa6d4007ecde3762116c6193613f43b`.
+`783ab7282af1d470258615c5e4962868aa643afb`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -61,6 +61,9 @@ with the partner-node application clients.
 
 Kling 4.0 API schemas and video nodes in `comfy_api_nodes/apis/kling.py` and
 `comfy_api_nodes/nodes_kling.py` are omitted with those partner-node clients.
+
+Seedance 1.x video-node deprecation flags in `comfy_api_nodes/nodes_bytedance.py`
+are omitted with those partner-node clients.
 
 BFL Flux Video Upscale V2 resolution targets and legacy-node handling in
 `comfy_api_nodes/nodes_bfl.py` are omitted with those partner-node clients.
