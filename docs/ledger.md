@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`edc480ac44de8714b4008810bc68393a5c22f937`.
+`2c75dc1b379a59e0880619d029607af5169a62ef`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -18,7 +18,7 @@ callers; neither module requires Google's MediaPipe runtime package.
 | `dinkster_inference/mediapipe/face_landmarker.py` | `comfy_extras/mediapipe/face_landmarker.py` | `bc5f880dbdd43e426077f42ccec53bb577ffee9f` |
 | `dinkster_inference/mediapipe/face_geometry.py` | `comfy_extras/mediapipe/face_geometry.py` | `bc5f880dbdd43e426077f42ccec53bb577ffee9f` |
 
-Upstream's ComfyUI 0.43.0 application version bump does not change the
+Upstream's ComfyUI 0.44.0 application version bump does not change the
 fork-owned package metadata or the retained `comfyui_version.py` file.
 
 The application-only `comfyui-workflow-templates` dependency is omitted;
