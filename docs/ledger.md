@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`6b904b5fafd062effc1acbc46b1d3196922f7055`.
+`858fd58dcd47b1407a6778e0920f02a9b40fd538`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -129,6 +129,9 @@ ProRes/MOV encoding and chroma-subsampling controls in
 plus their `tests-unit/comfy_api_test/video_accumulation_test.py` and
 `tests-unit/comfy_api_test/video_bit_depth_test.py` coverage, are omitted
 with the application video API and nodes.
+
+Chroma-subsampling input validation in `comfy_extras/nodes_video.py`
+is also omitted: values other than `444`, `422`, and `420` select automatic mode.
 
 The following upstream tests within those two directories are omitted because
 they import application modules not distributed by this library:
