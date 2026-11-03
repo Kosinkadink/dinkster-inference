@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`1f22ffd176c5128e9fd71b3769ee4d671a005443`.
+`edc480ac44de8714b4008810bc68393a5c22f937`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -44,7 +44,7 @@ Omitted application paths: ComfyUI's server, application, nodes, extras,
 execution, middleware, frontend, assets, API and model directories, and tests
 outside `tests-unit/comfy_test/` and `tests-unit/comfy_quant/`.
 
-Local browser SSO and partner-token defaults, registry-default server feature
+Local browser SSO and partner-token feature flags, server feature
 initialization, and CLI override rules in `comfy_api/feature_flags.py` and
 `tests-unit/feature_flags_test.py` are omitted with the application API.
 
