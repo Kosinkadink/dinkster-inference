@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`858fd58dcd47b1407a6778e0920f02a9b40fd538`.
+`ab08f7b2caa6d4007ecde3762116c6193613f43b`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -67,6 +67,10 @@ BFL Flux Video Upscale V2 resolution targets and legacy-node handling in
 
 Topaz Wonder 4 image enhancement, pricing, and image sizing limits in
 `comfy_api_nodes/nodes_topaz.py` are omitted with those partner-node clients.
+
+Sonilo Music 1.5 request/task schemas, remote music generation, and pricing
+updates in `comfy_api_nodes/apis/sonilo.py` and `comfy_api_nodes/nodes_sonilo.py`
+are omitted with those partner-node clients.
 
 Veed API schemas and video nodes in `comfy_api_nodes/apis/veed.py` and
 `comfy_api_nodes/nodes_veed.py` are omitted with those partner-node clients.
