@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`783ab7282af1d470258615c5e4962868aa643afb`.
+`576b642e77b4c42f84afe583c8e8f0eef7637618`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -43,6 +43,10 @@ misnamed `.ckpt`, `.pt`, or `.bin` therefore load where upstream calls
 Omitted application paths: ComfyUI's server, application, nodes, extras,
 execution, middleware, frontend, assets, API and model directories, and tests
 outside `tests-unit/comfy_test/` and `tests-unit/comfy_quant/`.
+
+PH3 Image VAE, text connector/tokenizer, and loader detection are retained.
+Conditioning and latent helpers in `comfy_extras/nodes_minimax_h3.py` are
+omitted with the application nodes.
 
 TextGenerateV2 Autogrow inputs and legacy-node replacements in
 `comfy_extras/nodes_textgen.py`, `comfy_extras/nodes_replacements.py`, and
