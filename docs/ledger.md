@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`4d988b647853f587173728cfda163d1f77501102`.
+`6b904b5fafd062effc1acbc46b1d3196922f7055`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -43,6 +43,11 @@ misnamed `.ckpt`, `.pt`, or `.bin` therefore load where upstream calls
 Omitted application paths: ComfyUI's server, application, nodes, extras,
 execution, middleware, frontend, assets, API and model directories, and tests
 outside `tests-unit/comfy_test/` and `tests-unit/comfy_quant/`.
+
+TextGenerateV2 Autogrow inputs and legacy-node replacements in
+`comfy_extras/nodes_textgen.py`, `comfy_extras/nodes_replacements.py`, and
+`app/node_replace_manager.py` are omitted with the application nodes and
+replacement manager. The Gemma3/Gemma4 multi-input tokenizer support is retained.
 
 Cached pinned frontend selection, release tag lookups, and lazy release
 pagination that stops at the first prerelease in `app/frontend_management.py`
