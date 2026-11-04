@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`70bcb4e9fc70f19b7cdb340966351ed6479f2188`.
+`5f415e31abfd837870bbc733ba1e158de71ed985`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -72,6 +72,10 @@ application frontend manager.
 Proxy environment handling in `comfy_api_nodes/` and its
 `tests-unit/comfy_api_nodes_test/comfy_cloud_test.py` coverage are omitted
 with the partner-node application clients.
+
+Pika Soundtrack, SFX and Music API schemas and nodes in
+`comfy_api_nodes/apis/pika.py` and `comfy_api_nodes/nodes_pika.py` are omitted
+with those partner-node clients.
 
 OpenAI GPT-6.1 Sol/Terra choices, reasoning options, retired model removal,
 image defaults, and pricing updates in `comfy_api_nodes/nodes_openai.py` are
