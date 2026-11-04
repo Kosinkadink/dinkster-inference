@@ -1,11 +1,14 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`7f09d3fa4a783868fe39d4d63cf4f815e58abecd`.
+`56f179f6c50dad0c4c860ae4da427415c8e86415`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
 upstream `hooks.py` imports it. The `comfy` package aliases the installed library.
+
+SeedVR2 adaptive VAE slicing, per-pass compiler cache scopes, and VAE patcher
+wiring are retained with their library regression coverage.
 
 `dinkster_inference/mediapipe/` retains `comfy_extras/mediapipe/` from
 ComfyUI `bc5f880dbdd43e426077f42ccec53bb577ffee9f`, mechanically normalized
@@ -43,6 +46,9 @@ misnamed `.ckpt`, `.pt`, or `.bin` therefore load where upstream calls
 Omitted application paths: ComfyUI's server, application, nodes, extras,
 execution, middleware, frontend, assets, API and model directories, and tests
 outside `tests-unit/comfy_test/` and `tests-unit/comfy_quant/`.
+
+The pixel-space VAE selection tip for Pillow dtype errors in `execution.py`
+is omitted with the application execution layer.
 
 Local browser SSO and partner-token feature flags, server feature
 initialization, and CLI override rules in `comfy_api/feature_flags.py` and
