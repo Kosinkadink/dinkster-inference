@@ -1,11 +1,14 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`ec2e349dfe5a9416835254427d4cf6109d58f763`.
+`56f179f6c50dad0c4c860ae4da427415c8e86415`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
 upstream `hooks.py` imports it. The `comfy` package aliases the installed library.
+
+SeedVR2 adaptive VAE slicing, per-pass compiler cache scopes, and VAE patcher
+wiring are retained with their library regression coverage.
 
 `dinkster_inference/mediapipe/` retains `comfy_extras/mediapipe/` from
 ComfyUI `bc5f880dbdd43e426077f42ccec53bb577ffee9f`, mechanically normalized
