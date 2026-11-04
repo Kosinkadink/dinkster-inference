@@ -73,8 +73,9 @@ Proxy environment handling in `comfy_api_nodes/` and its
 `tests-unit/comfy_api_nodes_test/comfy_cloud_test.py` coverage are omitted
 with the partner-node application clients.
 
-Pika H3 Flex API schemas and video nodes in `comfy_api_nodes/apis/pika.py`
-and `comfy_api_nodes/nodes_pika.py` are omitted with those partner-node clients.
+Pika Soundtrack, SFX and Music API schemas and nodes in
+`comfy_api_nodes/apis/pika.py` and `comfy_api_nodes/nodes_pika.py` are omitted
+with those partner-node clients.
 
 OpenAI GPT-6.1 Sol/Terra choices, reasoning options, retired model removal,
 image defaults, and pricing updates in `comfy_api_nodes/nodes_openai.py` are
