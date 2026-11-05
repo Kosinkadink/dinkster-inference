@@ -1,11 +1,14 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`72bcda7696471e5b673c52dabb216650e7c5b71a`.
+`fb2b26fdac507b7da81277c7becaf54c5e46ac6b`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
 upstream `hooks.py` imports it. The `comfy` package aliases the installed library.
+
+Qwen combined linear projections, residency-scoped weight combining, and
+prefetch relayout changes are retained with their library tests.
 
 SeedVR2 adaptive VAE slicing, per-pass compiler cache scopes, and VAE patcher
 wiring are retained with their library regression coverage.
@@ -49,6 +52,12 @@ misnamed `.ckpt`, `.pt`, or `.bin` therefore load where upstream calls
 Omitted application paths: ComfyUI's server, application, nodes, extras,
 execution, middleware, frontend, assets, API and model directories, and tests
 outside `tests-unit/comfy_test/` and `tests-unit/comfy_quant/`.
+
+The unpinned agent requirement and upgrade install hints in
+`agent_requirements.txt` and `app/agent_host.py`, plus their
+`tests-unit/agent_requirements_test.py` and
+`tests-unit/app_test/agent_host_test.py` coverage, are omitted with the
+application agent host.
 
 The pixel-space VAE selection tip for Pillow dtype errors in `execution.py`
 is omitted with the application execution layer.
