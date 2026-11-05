@@ -1,11 +1,16 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`11c26b41c335f23b8d2f8a17da3193e044e56ce1`.
+`2f8943324e1eae89a5ee6c7db93602299246b5f1`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
 upstream `hooks.py` imports it. The `comfy` package aliases the installed library.
+
+RelayVSR model detection, keyframe model, latent format and Flash decoder are
+retained, including data-copy streams and the SeedVR/pose-cache callers.
+RelayVSR conditioning and VSR Decode nodes in `comfy_extras/nodes_wan.py`
+are omitted with the application nodes.
 
 Qwen combined linear projections, residency-scoped weight combining, and
 prefetch relayout changes are retained with their library tests.
