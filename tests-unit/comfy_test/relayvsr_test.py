@@ -59,3 +59,30 @@ def test_host_writer_cpu_copies_strided_frame_destinations():
         for frame in range(5):
             writer.write(output[:, :, frame], expected[:, :, frame].clone())
     torch.testing.assert_close(output, expected)
+
+
+def test_host_writer_allocation_failure_leaves_no_pinned_buffers(monkeypatch):
+    target = torch.empty(2, 3)
+    allocate = torch.empty
+    allocations = 0
+    registered = set()
+
+    def fail_second_allocation(*args, **kwargs):
+        nonlocal allocations
+        allocations += 1
+        if allocations == 2:
+            raise MemoryError("host allocation failed")
+        return allocate(*args, **kwargs)
+
+    def pin(buffer, **kwargs):
+        registered.add(buffer.data_ptr())
+        return True
+
+    monkeypatch.setattr(model_management, "get_data_stream", lambda device: object())
+    monkeypatch.setattr(model_management, "ensure_pin_budget", lambda *args, **kwargs: True)
+    monkeypatch.setattr(model_management, "pin_memory", pin)
+    monkeypatch.setattr(model_management, "unpin_memory", lambda buffer: registered.remove(buffer.data_ptr()))
+    monkeypatch.setattr(torch, "empty", fail_second_allocation)
+    with pytest.raises(MemoryError, match="host allocation failed"):
+        model_management.HostWriter(torch.device("cpu"), target, (3,))
+    assert not registered

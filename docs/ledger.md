@@ -9,6 +9,8 @@ upstream `hooks.py` imports it. The `comfy` package aliases the installed librar
 
 RelayVSR model detection, keyframe model, latent format and Flash decoder are
 retained, including data-copy streams and the SeedVR/pose-cache callers.
+HostWriter allocates both staging buffers before registering either one so
+a host-allocation failure cannot strand a pinned buffer during construction.
 RelayVSR conditioning and VSR Decode nodes in `comfy_extras/nodes_wan.py`
 are omitted with the application nodes.
 
