@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`7ad7adb38f6cbb6c2b0713d3bd44c3fb2b9c8ebe`.
+`3cd2596673a96819133e34281688c370aff9563b`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -53,6 +53,8 @@ is omitted with the application execution layer.
 Local browser SSO and partner-token feature flags, server feature
 initialization, and CLI override rules in `comfy_api/feature_flags.py` and
 `tests-unit/feature_flags_test.py` are omitted with the application API.
+Their enabled-by-default registry and server initialization changes are also
+omitted; the library does not ship application authentication features.
 
 PH3 Image VAE, text connector/tokenizer, and loader detection are retained.
 Conditioning and latent helpers in `comfy_extras/nodes_minimax_h3.py` are
