@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`fb2b26fdac507b7da81277c7becaf54c5e46ac6b`.
+`11c26b41c335f23b8d2f8a17da3193e044e56ce1`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -52,6 +52,9 @@ misnamed `.ckpt`, `.pt`, or `.bin` therefore load where upstream calls
 Omitted application paths: ComfyUI's server, application, nodes, extras,
 execution, middleware, frontend, assets, API and model directories, and tests
 outside `tests-unit/comfy_test/` and `tests-unit/comfy_quant/`.
+
+Imported-mesh remeshing bounds fitting and invalid-vertex cleanup in
+`comfy_extras/nodes_mesh_postprocess.py` are omitted with the application nodes.
 
 The unpinned agent requirement and upgrade install hints in
 `agent_requirements.txt` and `app/agent_host.py`, plus their
