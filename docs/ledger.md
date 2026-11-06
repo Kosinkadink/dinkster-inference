@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`fd7105477a348a5357f98d3a6b783027fa1ba3fe`.
+`af02df4811fb7b0f55e2faf65692334e085160dc`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
