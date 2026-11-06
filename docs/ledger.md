@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`7b6c412a2a24d5298a3f39e8c54ac413e9335091`.
+`52a20aa7707d859946d1f2adbaacca31f3df6239`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -104,6 +104,9 @@ with those partner-node clients.
 OpenAI GPT-6.1 Sol/Terra choices, reasoning options, retired model removal,
 image defaults, and pricing updates in `comfy_api_nodes/nodes_openai.py` are
 omitted with those partner-node clients.
+GPT Image 2.6 Flare/Sunburst choices, complexity request fields and controls,
+and pricing in `comfy_api_nodes/apis/openai.py` and
+`comfy_api_nodes/nodes_openai.py` are also omitted with those clients.
 
 Kling 4.0 API schemas and video nodes in `comfy_api_nodes/apis/kling.py` and
 `comfy_api_nodes/nodes_kling.py` are omitted with those partner-node clients.
