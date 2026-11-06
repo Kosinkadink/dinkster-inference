@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`aa8a8d4f0a195cd33112a36ce7a0bcb157eafc89`.
+`51285bff5bdc618f5dbe821377bbcdc5f3e94ea7`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -35,7 +35,7 @@ Upstream's ComfyUI 0.44.0 application version bump does not change the
 fork-owned package metadata or the retained `comfyui_version.py` file.
 
 The application-only `comfyui-workflow-templates` dependency is omitted;
-its upstream bump to 0.11.102 does not change the library requirements.
+its upstream bump to 0.11.103 does not change the library requirements.
 
 The retained `comfy-kitchen` dependency is pinned to 0.2.41 in both library
 dependency manifests.
@@ -71,6 +71,13 @@ application agent host.
 
 The pixel-space VAE selection tip for Pillow dtype errors in `execution.py`
 is omitted with the application execution layer.
+
+Resolution selector megapixel input precision in `comfy_extras/nodes_resolution.py`
+is omitted with the application nodes.
+
+The API-node PR template's communication checklist removal in
+`.github/PULL_REQUEST_TEMPLATE/api-node.md` is not imported by the library sync;
+the existing repository template remains unchanged.
 
 Local browser SSO and partner-token feature flags, server feature
 initialization, and CLI override rules in `comfy_api/feature_flags.py` and
@@ -144,6 +151,9 @@ those partner-node clients.
 
 Qwen Image generation and editing migration to Comfy Router in
 `comfy_api_nodes/nodes_qwen.py` is omitted with those partner-node clients.
+
+Gemini Omni Flash 1.2 model inputs, video duration limits, and pricing in
+`comfy_api_nodes/nodes_gemini.py` are omitted with those partner-node clients.
 
 Ideogram 4.5 Precise Edit region editing in `comfy_api_nodes/apis/ideogram.py`
 and `comfy_api_nodes/nodes_ideogram.py` is omitted with those partner-node clients.
