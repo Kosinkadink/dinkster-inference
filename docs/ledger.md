@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`e049311f586a06a0a3f620559ec4d12885b22ccc`.
+`63e5bf594339f676b4b15e072529873e3448409e`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -78,6 +78,9 @@ is omitted with the application nodes.
 The API-node PR template's communication checklist removal in
 `.github/PULL_REQUEST_TEMPLATE/api-node.md` is not imported by the library sync;
 the existing repository template remains unchanged.
+
+Upstream's partner-node ownership additions in `CODEOWNERS` are not imported
+by the library sync; the existing fork ownership rules remain unchanged.
 
 Local browser SSO and partner-token feature flags, server feature
 initialization, and CLI override rules in `comfy_api/feature_flags.py` and
