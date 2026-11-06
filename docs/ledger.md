@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`52a20aa7707d859946d1f2adbaacca31f3df6239`.
+`aa8a8d4f0a195cd33112a36ce7a0bcb157eafc89`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -141,6 +141,9 @@ omitted with those partner-node clients.
 WaveSpeed FlashVSR and image upscale router migration, schemas, and shared
 router submit/poll/cancel helpers in `comfy_api_nodes/` are omitted with
 those partner-node clients.
+
+Qwen Image generation and editing migration to Comfy Router in
+`comfy_api_nodes/nodes_qwen.py` is omitted with those partner-node clients.
 
 Ideogram 4.5 Precise Edit region editing in `comfy_api_nodes/apis/ideogram.py`
 and `comfy_api_nodes/nodes_ideogram.py` is omitted with those partner-node clients.
