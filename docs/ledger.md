@@ -1,11 +1,15 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`c85957ad7f0b7b963931ff3ca6b57816d433c869`.
+`1332fabfcc507aa7c548cd5152071ed494c207e8`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
 upstream `hooks.py` imports it. The `comfy` package aliases the installed library.
+
+Solid mesh extraction from Gaussian splats, including Poisson interior fill,
+normal refinement and changed extraction defaults in
+`comfy_extras/nodes_gaussian_splat.py`, is omitted with the application nodes.
 
 Qwen 3.5 video frame sampling, paired-frame preprocessing and video MRoPE
 positions are retained. The video tooltip update in
