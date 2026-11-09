@@ -1,12 +1,11 @@
 'MiniMax H3 text/vision conditioning: Qwen3-VL-32B (truncated to 50 layers).\n\nThe H3 presentation is NOT chat-templated: token ids are raw prompt/label text\n(no special tokens) with explicit vision blocks spliced in:\n\n  t2va:   <prompt>\n  fl2va:  "<Picture 1>: " <vision block> ["<Picture 2>: " <vision block>] <prompt>\n  ref2va: per condition in request order (1-based ordinals per type):\n            image -> "<Picture i>: " <vision block>\n            audio -> "<Audio j>: "              (audio never enters Qwen)\n            video -> "<Video k>: " then per 2-frame temporal block\n                     "<T.T seconds>" <vision block(2 frames)>\n          then <prompt>\n\nThe conditioning is the unnormalized hidden state after LM layer 50 (the\nconverted checkpoint is truncated there, so this is simply the last-layer\noutput with no final norm). Vision-pad positions carry adaLN token tag 0\n(video modality) in the DiT; text positions carry tag 1 \u2014 the tags are\nreturned alongside the embeddings as "minimax_token_tags".\n'
 
-import math
-
 import torch
 import torch.nn.functional as F
 import dinkster_inference.ops
 import dinkster_inference.sd1_clip
 from .qwen3vl import Qwen3VL, Qwen3VLSDTokenizer
+from .qwen_vl import smart_resize
 
 VISION_START = 151652
 VISION_END = 151653
@@ -30,17 +29,7 @@ def process_video_block(frames, patch_size=16, temporal_patch_size=2, merge_size
     """
     t, height, width, _ = frames.shape
     imgs = frames.permute(0, 3, 1, 2)
-    factor = patch_size * merge_size
-    h_bar = round(height / factor) * factor
-    w_bar = round(width / factor) * factor
-    if h_bar * w_bar > max_pixels:
-        beta = math.sqrt((height * width) / max_pixels)
-        h_bar = max(factor, math.floor(height / beta / factor) * factor)
-        w_bar = max(factor, math.floor(width / beta / factor) * factor)
-    elif h_bar * w_bar < min_pixels:
-        beta = math.sqrt(min_pixels / (height * width))
-        h_bar = math.ceil(height * beta / factor) * factor
-        w_bar = math.ceil(width * beta / factor) * factor
+    h_bar, w_bar = smart_resize(height, width, patch_size * merge_size, min_pixels, max_pixels)
 
     imgs = F.interpolate(imgs, size=(h_bar, w_bar), mode="bilinear", align_corners=False)
     mean = torch.tensor(QWEN_IMAGE_MEAN, device=imgs.device).view(1, 3, 1, 1)
