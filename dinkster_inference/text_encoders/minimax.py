@@ -1,4 +1,4 @@
-'MiniMax H3 text/vision conditioning: Qwen3-VL-32B (truncated to 50 layers).\n\nThe H3 presentation is NOT chat-templated: token ids are raw prompt/label text\n(no special tokens) with explicit vision blocks spliced in:\n\n  t2va:   <prompt>\n  fl2va:  "<Picture 1>: " <vision block> ["<Picture 2>: " <vision block>] <prompt>\n  ref2va: per condition in request order (1-based ordinals per type):\n            image -> "<Picture i>: " <vision block>\n            audio -> "<Audio j>: "              (audio never enters Qwen)\n            video -> "<Video k>: " then per 2-frame temporal block\n                     "<T.T seconds>" <vision block(2 frames)>\n          then <prompt>\n\nThe conditioning is the unnormalized hidden state after LM layer 50 (the\nconverted checkpoint is truncated there, so this is simply the last-layer\noutput with no final norm). Vision-pad positions carry adaLN token tag 0\n(video modality) in the DiT; text positions carry tag 1 \u2014 the tags are\nreturned alongside the embeddings as "minimax_token_tags".\n'
+'MiniMax H3 text/vision conditioning: Qwen3-VL-32B (truncated to 50 layers).\n\nThe H3 presentation is NOT chat-templated: token ids are raw prompt/label text\n(no special tokens) with explicit vision blocks spliced in:\n\n  t2va:   <prompt>\n  fl2va:  "<Picture 1>: " <vision block> ["<Picture 2>: " <vision block>] <prompt>\n  image:  "Picture 1: " <vision block> ["Picture 2: " <vision block> ...] <prompt>  (MiniMax-H3-Image edits)\n  ref2va: per condition in request order (1-based ordinals per type):\n            image -> "<Picture i>: " <vision block>\n            audio -> "<Audio j>: "              (audio never enters Qwen)\n            video -> "<Video k>: " then per 2-frame temporal block\n                     "<T.T seconds>" <vision block(2 frames)>\n          then <prompt>\n\nThe conditioning is the unnormalized hidden state after LM layer 50 (the\nconverted checkpoint is truncated there, so this is simply the last-layer\noutput with no final norm). Vision-pad positions carry adaLN token tag 0\n(video modality) in the DiT; text positions carry tag 1 \u2014 the tags are\nreturned alongside the embeddings as "minimax_token_tags".\n'
 
 import torch
 import torch.nn.functional as F
@@ -165,7 +165,7 @@ class MiniMaxH3Tokenizer(dinkster_inference.sd1_clip.SD1Tokenizer):
         return emb
 
     def tokenize_with_weights(self, text, return_word_ids=False, images=[],
-                              minimax_ref_items=None, **kwargs):
+                              minimax_ref_items=None, picture_label="<Picture %d>: ", **kwargs):
         entries = []
 
         def add_text(s):
@@ -210,7 +210,7 @@ class MiniMaxH3Tokenizer(dinkster_inference.sd1_clip.SD1Tokenizer):
                         add_vision(frames[i:i + 2], video_block=True)
         else:
             for i, img in enumerate(images):
-                add_text("<Picture %d>: " % (i + 1))
+                add_text(picture_label % (i + 1))
                 add_vision(img)
 
         add_text(text)
