@@ -1,11 +1,15 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`53986ff1e0f2b0d78dd28f6fff7b680f178d8cb6`.
+`61e524bdba7a4e193b45c2697f1af83c1beb86d6`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
 upstream `hooks.py` imports it. The `comfy` package aliases the installed library.
+
+Flux PEFT mappings and multi-view token handling are retained with the
+inference library. The UltraTex application node and related camera, mesh, and
+node-registration changes are omitted.
 
 Solid mesh extraction from Gaussian splats, including Poisson interior fill,
 normal refinement and changed extraction defaults in
