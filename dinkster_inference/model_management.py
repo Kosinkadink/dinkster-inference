@@ -1752,8 +1752,9 @@ class HostWriter:
         if self.stream is not None:
             # inactive model pins make room for the staging buffers, active ones stay
             if ensure_pin_budget(2 * torch.Size(shape).numel() * target.element_size(), evict_active=False):
-                for _ in range(2):
-                    buffer = torch.empty(shape, dtype=target.dtype)
+                # Finish allocations before registering any buffer: a failed constructor has no exit cleanup.
+                buffers = [torch.empty(shape, dtype=target.dtype) for _ in range(2)]
+                for buffer in buffers:
                     if pin_memory(buffer, evict_active=False):
                         self.staging.append(buffer)
             if len(self.staging) < 2:
