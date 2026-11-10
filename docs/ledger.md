@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`61e524bdba7a4e193b45c2697f1af83c1beb86d6`.
+`989d93d0d968e704c589ce0146bb18c77f6b50cc`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -187,6 +187,10 @@ VAE cloning is retained in the library. The VAE compute-dtype node in
 
 The MOSS model merge node in `comfy_extras/nodes_model_merging_model_specific.py`
 is omitted with the application nodes; it does not change the inference library.
+
+MiniMax-H3 image model support in the inference library is retained. The
+application node in `comfy_extras/nodes_minimax_h3.py` is omitted with the
+application nodes.
 
 The MiniMax-H3 latent upscaler model is retained in the library. Its loader in
 `comfy_extras/nodes_hunyuan.py` and node in `comfy_extras/nodes_minimax_h3.py`
