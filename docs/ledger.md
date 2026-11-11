@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`989d93d0d968e704c589ce0146bb18c77f6b50cc`.
+`0228a9d73cd7c2daf8f61fe13d56b12efe307171`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -47,7 +47,7 @@ Upstream's ComfyUI 0.44.0 application version bump does not change the
 fork-owned package metadata or the retained `comfyui_version.py` file.
 
 The application-only `comfyui-workflow-templates` dependency is omitted;
-its upstream bump to 0.11.103 does not change the library requirements.
+its upstream bumps through 0.11.106 do not change the library requirements.
 
 The retained `comfy-kitchen` dependency is pinned to 0.2.41 in both library
 dependency manifests.
@@ -165,6 +165,10 @@ schemas and nodes, plus related request/reference handling, in
 `comfy_api_nodes/apis/minimax.py` and `comfy_api_nodes/nodes_minimax.py` are
 omitted with those partner-node clients.
 
+MiniMax H3 Image partner API schemas and node are omitted with those clients.
+The LTX AlphaGen, SDR-to-HDR, Reframe, and Upscale partner nodes are also
+omitted. Neither application integration changes the inference library.
+
 WaveSpeed FlashVSR and image upscale router migration, schemas, and shared
 router submit/poll/cancel helpers in `comfy_api_nodes/` are omitted with
 those partner-node clients.
@@ -227,6 +231,8 @@ with the application video API and nodes.
 
 Chroma-subsampling input validation in `comfy_extras/nodes_video.py`
 is also omitted: values other than `444`, `422`, and `420` select automatic mode.
+The application video node's additional `none` choice and its video bit-depth
+test adjustment are likewise omitted.
 
 The following upstream tests within those two directories are omitted because
 they import application modules not distributed by this library:
