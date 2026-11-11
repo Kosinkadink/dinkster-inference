@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`0228a9d73cd7c2daf8f61fe13d56b12efe307171`.
+`74eb0c4b8a1a894e7210326882a8d9a016e37ccb`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -233,6 +233,11 @@ Chroma-subsampling input validation in `comfy_extras/nodes_video.py`
 is also omitted: values other than `444`, `422`, and `420` select automatic mode.
 The application video node's additional `none` choice and its video bit-depth
 test adjustment are likewise omitted.
+
+Wan Router schemas, clients, node migration, video input implementation, and
+their API/video tests in `comfy_api/`, `comfy_api_nodes/`, and `tests-unit/`
+are omitted with the application API and nodes; this range makes no inference
+library or dependency change.
 
 The following upstream tests within those two directories are omitted because
 they import application modules not distributed by this library:
