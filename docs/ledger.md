@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`74eb0c4b8a1a894e7210326882a8d9a016e37ccb`.
+`a592c0a654af22f75d97f214d6e3e34eb13cd9db`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -238,6 +238,10 @@ Wan Router schemas, clients, node migration, video input implementation, and
 their API/video tests in `comfy_api/`, `comfy_api_nodes/`, and `tests-unit/`
 are omitted with the application API and nodes; this range makes no inference
 library or dependency change.
+
+Krea Router migration, Krea and Seedance partner-node behavior, and the
+application-only `comfyui-frontend-package` bump to 1.59.1 are omitted. They
+do not change the inference library or its dependency manifests.
 
 The following upstream tests within those two directories are omitted because
 they import application modules not distributed by this library:
