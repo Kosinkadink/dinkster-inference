@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`c1eece62cbf1805d4f64286d7f5592e6a215e6ba`.
+`48a160ec665ff16d14469ae0f777d50eb323ca58`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -259,3 +259,5 @@ they import application modules not distributed by this library:
 | `test_seedvr2_vae_decode.py` | `comfy_extras.nodes_seedvr` |
 | `test_sensenova.py` | `nodes`, `comfy_extras.nodes_hidream_o1`, `comfy_extras.nodes_sensenova` |
 | `test_vae_decode_tiled_nested.py` | `nodes` |
+
+This sync omits the FishAudio, HeyGen, and OpenRouter partner-node changes, the image compositing node, and image-node changes because they belong to application/API surfaces. No new inference-library change is retained; dependency manifests and every fork-owned guarded path remain unchanged.
