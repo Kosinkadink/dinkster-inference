@@ -1,7 +1,7 @@
 # Upstream provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`a592c0a654af22f75d97f214d6e3e34eb13cd9db`.
+`c1eece62cbf1805d4f64286d7f5592e6a215e6ba`.
 
 The library is upstream `comfy/` under the mechanical `dinkster_inference`
 import rename. `node_helpers.py` is packaged from the same revision because
@@ -238,6 +238,11 @@ Wan Router schemas, clients, node migration, video input implementation, and
 their API/video tests in `comfy_api/`, `comfy_api_nodes/`, and `tests-unit/`
 are omitted with the application API and nodes; this range makes no inference
 library or dependency change.
+
+DirectML support is removed from the inference library because the supported
+PyTorch versions no longer provide a DirectML plugin. Gemini partner-node model
+choices, Gaussian-splat application-node changes, latent-preview changes, and
+the application-only `comfyui-workflow-templates` 0.11.107 bump are omitted.
 
 Krea Router migration, Krea and Seedance partner-node behavior, and the
 application-only `comfyui-frontend-package` bump to 1.59.1 are omitted. They
