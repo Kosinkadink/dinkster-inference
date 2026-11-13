@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dinkster-inference"
-version = "0.1.1"
+version = "0.1.2"
 description = "Dinkster-owned inference library forked from ComfyUI"
 readme = "README.md"
 license = { file = "LICENSE" }
