@@ -1,0 +1,55 @@
+name: Inference release tags
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "41 * * * *"
+
+concurrency:
+  group: inference-release-tags
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    if: github.repository == 'Kosinkadink/dinkster-inference' && (github.event_name == 'schedule' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+      REPOSITORY: ${{ github.repository }}
+      SOURCE: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE }}
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_BOT_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify source and acquire upstream tag history
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+          git merge-base --is-ancestor "$SOURCE" origin/main
+          runs=$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?branch=main&head_sha=$SOURCE&status=success")
+          test "$(jq '[.workflow_runs[] | select(.head_sha == env.SOURCE and .event == "push")] | length' <<< "$runs")" -gt 0
+          git remote add upstream https://github.com/Comfy-Org/ComfyUI.git
+          git fetch --no-tags upstream master '+refs/tags/*:refs/upstream-tags/*'
+      - name: Create immutable source tags
+        run: |
+          set -euo pipefail
+          python tools/inference_release.py plan --source "$SOURCE" > /tmp/inference-releases.json
+          while IFS= read -r release; do
+            version=$(jq -r .version <<< "$release")
+            commit=$(jq -r .sourceCommit <<< "$release")
+            jq -n --arg tag "v$version" --arg message "$release" --arg object "$commit" \
+              '{tag: $tag, message: $message, object: $object, type: "commit"}' > /tmp/inference-tag.json
+            object=$(gh api --method POST "repos/$REPOSITORY/git/tags" --input /tmp/inference-tag.json --jq .sha)
+            gh api --method POST "repos/$REPOSITORY/git/refs" -f "ref=refs/tags/v$version" -f "sha=$object"
+          done < <(jq -c '.[]' /tmp/inference-releases.json)

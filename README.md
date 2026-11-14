@@ -13,25 +13,29 @@ python -m pip install .
 
 ## Releases
 
-Consumers pin an exact `dinkster-inference==X.Y.Z` release in package metadata
-and record its PyPI wheel hashes in their lockfile. Before the first PyPI
-publication of 0.1.0, build a local wheel with `python -m build`.
+Consumers pin exact versions and record PyPI wheel hashes in their lockfile.
+After a landed upstream sync passes main CI, release automation creates an
+immutable `vX.Y.Z.devN` tag at that inference commit and publishes it to PyPI.
+`X.Y.Z` is the next patch after the latest stable inference release; `N` is the
+source commit count. Tags are retained even if a package is removed from PyPI.
 
-The upstream sync owner updates `project.version` when landed inference changes
-need a new release and validates that commit before requesting publication.
-An authorized maintainer pushes the matching `vX.Y.Z` tag from the landed
-commit. `.github/workflows/release.yml` builds the wheel and sdist, checks
-their metadata, and publishes those same artifacts using trusted publishing.
-Branches and pull requests build without publishing. After publication the
-sync owner updates Dinkster's exact requirement and lock together; setup
-scripts do not select a separate inference commit.
+An hourly check also detects ComfyUI stable tags contained by the recorded
+upstream fork point. Each newly contained stable tag produces the next stable
+inference patch release, with the ComfyUI tag recorded in the annotated inference
+tag. Multiple upstream tags produce separate inference releases. A stable tag
+arriving after the sync is detected without needing another source change.
 
-The repository owner must register the PyPI project `dinkster-inference` with
-a trusted publisher for owner `Kosinkadink`, repository `dinkster-inference`,
-workflow `release.yml`, environment `pypi`. Before publishing, protect that
-GitHub environment with required owner approval and restrict deployment to
-version tags. Publication requires the owner's authorization; no stored PyPI
-API token is used.
+The release tag sets the built distribution version without changing the source
+commit. Wheels and sdists include `dinkster_inference/_release.json` with the
+version, inference source commit and upstream commit. The annotated tag records
+the same source identity. Missing-prerelease fallback can therefore prove commit
+containment rather than guessing from version numbers. Branches and pull requests
+build without publishing; ordinary consumers keep their exact pins.
+
+Trusted publication uses owner `Kosinkadink`, repository `dinkster-inference`,
+workflow `release.yml`, environment `pypi`. Tag automation uses the existing
+release bot credential; no PyPI API token is stored. Failed publication is not
+hidden by moving or replacing a tag.
 
 As in upstream ComfyUI, CPU callers select CPU execution before importing model
 management or loaders:

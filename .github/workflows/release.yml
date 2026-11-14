@@ -16,21 +16,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Check release version
+      - name: Embed release source and version
         if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          python - <<'PY'
-          import os
-          import tomllib
-          from pathlib import Path
-
-          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
-          if os.environ["GITHUB_REF_NAME"] != f"v{version}":
-              raise SystemExit("Release tag must match the project version")
-          PY
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: python tools/inference_release.py prepare --version "${RELEASE_VERSION#v}"
       - run: python -m pip install build twine
       - run: python -m build
       - run: python -m twine check --strict dist/*
