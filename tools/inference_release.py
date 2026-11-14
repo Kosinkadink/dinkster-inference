@@ -56,19 +56,30 @@ def release_plan(source):
     if not contains(current_upstream, previous_upstream):
         raise ValueError("Current upstream does not contain the last stable release")
     releases = []
-    previous_source = git("rev-parse", f"{source}^")
-    prereleases = git("tag", "--points-at", source, "--list", "v*.dev*").splitlines()
-    if upstream_at(previous_source) != current_upstream and not prereleases:
-        version = f"{latest[0]}.{latest[1]}.{latest[2] + 1}.dev{git('rev-list', '--count', source)}"
-        tag = f"v{version}"
-        if not git("tag", "--list", tag):
-            releases.append(
-                {
-                    "version": version,
-                    "sourceCommit": source,
-                    "upstreamCommit": current_upstream,
-                }
-            )
+    # Recover every pending sync even if its CI event was superseded by newer main.
+    previous = previous_upstream
+    for commit in git(
+        "rev-list", "--first-parent", "--reverse", f"{baseline}..{source}"
+    ).splitlines():
+        upstream = upstream_at(commit)
+        changed, previous = upstream != previous, upstream
+        prereleases = git("tag", "--points-at", commit, "--list", "v*.dev*").splitlines()
+        if (
+            not changed
+            or prereleases
+            or not git("ls-tree", "--name-only", commit, "tools/inference_release.py")
+        ):
+            continue
+        version = f"{latest[0]}.{latest[1]}.{latest[2] + 1}.dev{git('rev-list', '--count', commit)}"
+        if git("tag", "--list", f"v{version}"):
+            raise ValueError(f"Prerelease version already identifies another source: {version}")
+        releases.append(
+            {
+                "version": version,
+                "sourceCommit": commit,
+                "upstreamCommit": upstream,
+            }
+        )
     upstream_tags = []
     for ref in git(
         "for-each-ref", "refs/upstream-tags/", "--format=%(refname)"

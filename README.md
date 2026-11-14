@@ -18,6 +18,8 @@ After a landed upstream sync passes main CI, release automation creates an
 immutable `vX.Y.Z.devN` tag at that inference commit and publishes it to PyPI.
 `X.Y.Z` is the next patch after the latest stable inference release; `N` is the
 source commit count. Tags are retained even if a package is removed from PyPI.
+Superseded CI completions do not publish. The next successful current-main check
+recovers unpublished syncs since release automation was installed, in source order.
 
 An hourly check also detects ComfyUI stable tags contained by the recorded
 upstream fork point. Each newly contained stable tag produces the next stable

@@ -33,15 +33,21 @@ jobs:
         with:
           python-version: "3.12"
       - name: Verify source and acquire upstream tag history
+        id: source
         run: |
           set -euo pipefail
           test -n "$GH_TOKEN"
-          git merge-base --is-ancestor "$SOURCE" origin/main
+          if [ "$SOURCE" != "$(git rev-parse origin/main)" ]; then
+            echo "Skip superseded main CI completion: $SOURCE"
+            exit 0
+          fi
           runs=$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?branch=main&head_sha=$SOURCE&status=success")
           test "$(jq '[.workflow_runs[] | select(.head_sha == env.SOURCE and .event == "push")] | length' <<< "$runs")" -gt 0
           git remote add upstream https://github.com/Comfy-Org/ComfyUI.git
           git fetch --no-tags upstream master '+refs/tags/*:refs/upstream-tags/*'
+          echo "current=true" >> "$GITHUB_OUTPUT"
       - name: Create immutable source tags
+        if: steps.source.outputs.current == 'true'
         run: |
           set -euo pipefail
           python tools/inference_release.py plan --source "$SOURCE" > /tmp/inference-releases.json
