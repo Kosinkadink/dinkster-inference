@@ -84,9 +84,19 @@ a = sys.argv[1:]
 if a[:2] == ["pr", "list"]:
     print(s["number"])
 elif a[0] == "api":
-    print("\\n".join(s["comments"]))
+    if "check-runs" in a[1]:
+        print(json.dumps({"check_runs": [
+            {"name": "package-and-test", "status": "completed", "conclusion": "success"},
+            {"name": "Check for AI agent co-author trailers", "status": "completed", "conclusion": "success"},
+        ]}))
+    else:
+        print("\\n".join(s["comments"]))
 elif a[:2] == ["pr", "comment"]:
     s["comments"].append(a[a.index("--body") + 1])
+elif a[:2] == ["pr", "view"]:
+    print(json.dumps({"headRefOid": s["head"], "isDraft": s["draft"]}))
+elif a[:2] == ["pr", "merge"]:
+    s["merged"] = True
 elif a[:2] == ["pr", "ready"]:
     s["draft"] = "--undo" in a
 elif a[:2] == ["pr", "create"]:
@@ -234,3 +244,28 @@ def test_guarded_pr_draft_state_is_owned_by_the_owner(sync_repo, existing, confl
                  CONFLICTS="conflict.txt", GUARDED="docs/ledger.md" if not conflict else "")
     assert result.returncode == 0, result.stderr
     assert json.loads(state.read_text())["draft"] is (not existing)
+
+
+def test_automatic_merge_requires_workflow_pushed_head_and_ready_pull_request(sync_repo):
+    repo, remote, commit, base, old, target, marker, state, output, run = sync_repo
+    head = git(remote, "rev-parse", "refs/heads/upstream-sync")
+    github = json.loads(state.read_text())
+    github["head"] = head
+    state.write_text(json.dumps(github))
+
+    result = run("merge", PR_NUMBER="91", EXPECTED_HEAD=head, AUTOMATED_HEAD=head)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(state.read_text())["merged"] is True
+
+    github = json.loads(state.read_text())
+    github["draft"] = True
+    github.pop("merged")
+    state.write_text(json.dumps(github))
+    result = run("merge", PR_NUMBER="91", EXPECTED_HEAD=head, AUTOMATED_HEAD=head)
+    assert result.returncode != 0
+    assert "is a draft" in result.stdout
+    assert "merged" not in json.loads(state.read_text())
+
+    result = run("merge", PR_NUMBER="91", EXPECTED_HEAD=head, AUTOMATED_HEAD="unowned")
+    assert result.returncode != 0
+    assert "did not push" in result.stdout
