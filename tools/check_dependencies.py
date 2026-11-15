@@ -24,14 +24,26 @@ def check(root):
     }
     imports = {}
     for path in sorted(root.glob("dinkster_inference/**/*.py")) + [root / "node_helpers.py"]:
-        for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        dynamic_imports = {"importlib.import_module", "__import__"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                dynamic_imports.update(
+                    f"{alias.asname or alias.name}.import_module"
+                    for alias in node.names if alias.name == "importlib"
+                )
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module == "importlib":
+                dynamic_imports.update(
+                    alias.asname or alias.name for alias in node.names if alias.name == "import_module"
+                )
+        for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 names = [alias.name for alias in node.names]
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 names = [node.module]
             elif (
                 isinstance(node, ast.Call)
-                and ast.unparse(node.func) in {"importlib.import_module", "__import__"}
+                and ast.unparse(node.func) in dynamic_imports
                 and node.args
                 and isinstance(node.args[0], ast.Constant)
                 and isinstance(node.args[0].value, str)

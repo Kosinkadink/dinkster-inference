@@ -10,6 +10,11 @@ import pytest
     ('"Pillow>=10", "PyYAML", "typing-extensions"',
      'from PIL import Image\nimport yaml\nfrom typing_extensions import TypedDict\nimport os\nfrom . import local\n', None),
     ('"Pillow"', 'import PIL\nimport importlib\nimportlib.import_module("requests")\n', "Undeclared dependency requests"),
+    ('"Pillow"', 'import PIL\nimport importlib as imp\nimp.import_module("requests")\n', "Undeclared dependency requests"),
+    ('"Pillow"', 'import PIL\nfrom importlib import import_module as load\nload("requests")\n', "Undeclared dependency requests"),
+    ('"requests"', 'import importlib as imp\nimp.import_module("requests")\n', None),
+    ('"requests"', 'from importlib import import_module as load\nload("requests")\n', None),
+    ('"Pillow"', 'import PIL\nfrom pathlib import Path as load\nload("requests")\n', None),
     ('"Pillow"', 'import PIL\nfrom requests import Session\n', "Undeclared dependency requests"),
     ('"Pillow", "requests"', 'import PIL\n', "Unused dependency requests"),
 ])
