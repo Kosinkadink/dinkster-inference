@@ -278,10 +278,10 @@ jobs:
           fi
 
           # Preserve the inference-only boundary. Only upstream inference, retained
-          # library tests, and requirements changes flow through an automatic sync.
+          # library tests flow through an automatic sync.
           while IFS= read -r -d '' path; do
             case "$path" in
-              dinkster_inference/*|tests-unit/comfy_test/*|tests-unit/comfy_quant/*|node_helpers.py|requirements.txt)
+              dinkster_inference/*|tests-unit/comfy_test/*|tests-unit/comfy_quant/*|node_helpers.py)
                 ;;
               *)
                 if git cat-file -e "$base:$path" 2>/dev/null; then
@@ -462,15 +462,10 @@ jobs:
           from pathlib import Path
 
           package = sys.argv[1]
-          pins = []
-          for filename in ("requirements.txt", "pyproject.toml"):
-              match = re.search(rf'\b{re.escape(package)}==([^"\s,]+)', Path(filename).read_text())
-              if match is None:
-                  raise SystemExit(f"{filename} does not pin {package}")
-              pins.append(match.group(1))
-          if pins[0] != pins[1]:
-              raise SystemExit(f"{package} pins disagree: {pins}")
-          print(pins[0])
+          match = re.search(rf'\b{re.escape(package)}==([^"\s,]+)', Path("pyproject.toml").read_text())
+          if match is None:
+              raise SystemExit(f"pyproject.toml does not pin {package}")
+          print(match.group(1))
           PY
             )
             latest=$(curl --fail --silent --show-error "https://pypi.org/pypi/${package}/json" | jq -r .info.version)
@@ -497,18 +492,17 @@ jobs:
           from pathlib import Path
 
           package, version = sys.argv[1:]
-          for filename in ("requirements.txt", "pyproject.toml"):
-              path = Path(filename)
-              updated, count = re.subn(
-                  rf'(\b{re.escape(package)}==)[^"\s,]+',
-                  rf'\g<1>{version}',
-                  path.read_text(),
-              )
-              if count != 1:
-                  raise SystemExit(f"expected one {package} pin in {filename}, found {count}")
-              path.write_text(updated)
+          path = Path("pyproject.toml")
+          updated, count = re.subn(
+              rf'(\b{re.escape(package)}==)[^"\s,]+',
+              rf'\g<1>{version}',
+              path.read_text(),
+          )
+          if count != 1:
+              raise SystemExit(f"expected one {package} pin in pyproject.toml, found {count}")
+          path.write_text(updated)
           PY
-            git add requirements.txt pyproject.toml
+            git add pyproject.toml
             git commit -m "Bump ${package} to ${latest}"
             if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
               git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
@@ -520,7 +514,7 @@ jobs:
             {
               echo "Refs Kosinkadink/comfy-vibe-station#479"
               echo
-              echo "Pin ${package} ${latest} in \`requirements.txt\` and \`pyproject.toml\`."
+              echo "Pin ${package} ${latest} in \`pyproject.toml\`."
               echo
               echo "Release: https://pypi.org/project/${package}/${latest}/"
             } > "$body"

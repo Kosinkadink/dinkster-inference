@@ -2,7 +2,6 @@
 comfy/*
 node_helpers.py
 pyproject.toml
-requirements.txt
 tools/*
 tests-unit/comfy_test/rewrite_upstream_imports_test.py
 tests-unit/comfy_test/upstream_sync_test.py
