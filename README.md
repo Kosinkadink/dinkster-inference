@@ -51,8 +51,9 @@ assert comfy.sd is dinkster_inference.sd
 ```
 
 See [upstream provenance](docs/ledger.md) for the fork point and omitted
-application tests. `python tools/check_upstream_parity.py` checks the library
-and retained test files against that upstream commit. New upstream files use
+application tests. `python tools/check_upstream_parity.py --baseline /path/to/recorded-ComfyUI --upstream /path/to/new-ComfyUI`
+checks that the transformed upstream delta has been carried while retaining fork
+changes and fork-only files. New upstream files use
 `tools/rewrite_upstream_imports.py` for import renaming and ASCII source spelling;
 escaped string values and non-ASCII tokenizer resource data retain their meaning.
 
