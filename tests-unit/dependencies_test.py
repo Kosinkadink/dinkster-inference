@@ -9,7 +9,8 @@ import pytest
 @pytest.mark.parametrize("dependencies,source,expected", [
     ('"Pillow>=10", "PyYAML", "typing-extensions"',
      'from PIL import Image\nimport yaml\nfrom typing_extensions import TypedDict\nimport os\nfrom . import local\n', None),
-    ('"Pillow"', 'import PIL\nimport requests\n', "Undeclared dependency requests"),
+    ('"Pillow"', 'import PIL\nimport importlib\nimportlib.import_module("requests")\n', "Undeclared dependency requests"),
+    ('"Pillow"', 'import PIL\nfrom requests import Session\n', "Undeclared dependency requests"),
     ('"Pillow", "requests"', 'import PIL\n', "Unused dependency requests"),
 ])
 def test_dependency_check_rejects_missing_and_unused_runtime_packages(tmp_path, dependencies, source, expected):

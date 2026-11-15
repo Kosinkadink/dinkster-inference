@@ -29,6 +29,15 @@ def check(root):
                 names = [alias.name for alias in node.names]
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 names = [node.module]
+            elif (
+                isinstance(node, ast.Call)
+                and ast.unparse(node.func) in {"importlib.import_module", "__import__"}
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+                and not node.args[0].value.startswith(".")
+            ):
+                names = [node.args[0].value]
             else:
                 continue
             for name in names:
