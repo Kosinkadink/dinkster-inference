@@ -48,6 +48,11 @@ def sync_repo(tmp_path, request):
             else:
                 blob = git(repo, "hash-object", "-w", "--stdin", input=value)
                 git(repo, "update-index", "--add", "--cacheinfo", f"100644,{blob},{name}")
+        paths = git(repo, "ls-files").splitlines()
+        if "tools/library_files.txt" in paths and "UPSTREAM_SYNC_CONFLICTS.md" not in paths:
+            inventory = "".join(f"tooling {path}\n" for path in paths)
+            blob = git(repo, "hash-object", "-w", "--stdin", input=inventory)
+            git(repo, "update-index", "--cacheinfo", f"100644,{blob},tools/library_files.txt")
         tree = git(repo, "write-tree")
         lines = [f"tree {tree}"] + ([f"parent {parent}"] if parent else []) + headers
         return git(repo, "hash-object", "-t", "commit", "-w", "--stdin",
@@ -70,10 +75,13 @@ def sync_repo(tmp_path, request):
     base = commit(recorded, {
         "conflict.txt": "base\n" if getattr(request, "param", "conflict") == "clean" else "fork\n",
         "docs/ledger.md": ledger,
+        ".gitignore": (ROOT / ".gitignore").read_text(),
         "UPSTREAM_SYNC_GUARDED_PATHS": "docs/ledger.md\n",
         "tools/rewrite_upstream_imports.py": (ROOT / "tools/rewrite_upstream_imports.py").read_text(),
         "tools/regenerate_upstream_library.py": (ROOT / "tools/regenerate_upstream_library.py").read_text(),
         "tools/check_upstream_parity.py": (ROOT / "tools/check_upstream_parity.py").read_text(),
+        "tools/check_library_files.py": (ROOT / "tools/check_library_files.py").read_text(),
+        "tools/library_files.txt": "",
         "dinkster_inference/stub.py": "",
         "dinkster_inference/library.py": "value = 'base'\n",
         "tests-unit/comfy_test/stub.py": "",
@@ -110,7 +118,6 @@ elif a[0] == "api":
     if "check-runs" in a[1]:
         print(json.dumps({"check_runs": [
             {"name": "package-and-test", "status": "completed", "conclusion": "success"},
-            {"name": "Check for AI agent co-author trailers", "status": "completed", "conclusion": "success"},
         ]}))
     else:
         print("\\n".join(s["comments"]))
@@ -293,6 +300,30 @@ def test_automatic_merge_requires_workflow_pushed_head_and_ready_pull_request(sy
     result = run("merge", PR_NUMBER="91", EXPECTED_HEAD=head, AUTOMATED_HEAD="unowned")
     assert result.returncode != 0
     assert "did not push" in result.stdout
+
+
+@pytest.mark.parametrize("path, accepted", [
+    ("comfy/comfy_types/examples/example_nodes.py", True),
+    ("comfy/comfy_types/README.md", True),
+    ("comfy/comfy_types/node_typing.py", True),
+    ("comfy/new_application.py", False),
+])
+def test_sync_filters_removed_files_and_refuses_unclassified_additions(sync_repo, path, accepted):
+    repo, remote, commit, base, old, target, marker, state, output, run = sync_repo
+    target = commit(target, {path: "application = True\n"}, "Add upstream file")
+    git(repo, "update-ref", "refs/remotes/upstream/master", target)
+    result = run("upstream")
+    head = git(remote, "rev-parse", "refs/heads/upstream-sync")
+    if accepted:
+        assert result.returncode == 0, result.stderr
+        assert head != marker
+        assert path.replace("comfy/", "dinkster_inference/", 1) not in git(
+            remote, "ls-tree", "-r", "--name-only", head,
+        ).splitlines()
+    else:
+        assert result.returncode != 0
+        assert "Unclassified repository file: dinkster_inference/new_application.py" in result.stderr
+        assert head == marker
 
 
 def test_dependency_bumps_use_only_project_metadata(sync_repo):

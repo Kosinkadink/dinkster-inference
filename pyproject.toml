@@ -40,7 +40,7 @@ py-modules = ["node_helpers"]
 include = ["dinkster_inference*", "comfy"]
 
 [tool.setuptools.package-data]
-dinkster_inference = ["**/*.json", "**/*.model", "**/*.txt", "**/*.png", "**/*.md"]
+dinkster_inference = ["**/*.json", "**/*.model", "**/*.txt"]
 
 [tool.ruff]
 lint.select = [

@@ -45,8 +45,15 @@ def transform(upstream: Path, destination: Path) -> None:
         (upstream / "tests-unit" / "comfy_quant", destination / "tests-unit" / "comfy_quant"),
     ):
         for path in source.rglob("*"):
+            relative = path.relative_to(source)
             if path.is_file() and "__pycache__" not in path.parts:
-                output = target / path.relative_to(source)
+                if target.name == "dinkster_inference" and (
+                    relative == Path("comfy_types/node_typing.py")
+                    or relative == Path("comfy_types/README.md")
+                    or Path("comfy_types/examples") in relative.parents
+                ):
+                    continue
+                output = target / relative
                 output.parent.mkdir(parents=True, exist_ok=True)
                 output.write_bytes(path.read_bytes())
     for name in OMITTED_TESTS:
