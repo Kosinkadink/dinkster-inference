@@ -13,6 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Check library dependency declarations
+        run: python tools/check_dependencies.py
       - name: Build wheel
         run: |
           python -m pip install --upgrade build
@@ -32,4 +34,4 @@ jobs:
       - name: Check inference and packaging lint
         run: python -m ruff check dinkster_inference comfy node_helpers.py tools
       - name: Run retained library tests
-        run: python -m pytest -q tests-unit/comfy_test tests-unit/comfy_quant tests-unit/workflow_comparison_test.py tests-unit/release_test.py
+        run: python -m pytest -q tests-unit/comfy_test tests-unit/comfy_quant tests-unit/workflow_comparison_test.py tests-unit/release_test.py tests-unit/dependencies_test.py

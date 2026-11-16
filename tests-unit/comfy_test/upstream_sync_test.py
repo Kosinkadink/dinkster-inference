@@ -102,7 +102,10 @@ p = Path(os.environ["FAKE_GITHUB"])
 s = json.loads(p.read_text())
 a = sys.argv[1:]
 if a[:2] == ["pr", "list"]:
-    print(s["number"])
+    if "number,title" in a:
+        print("")
+    else:
+        print(s["number"])
 elif a[0] == "api":
     if "check-runs" in a[1]:
         print(json.dumps({"check_runs": [
@@ -157,7 +160,7 @@ else:
 
     def run(step_id, **values):
         git(repo, "reset", "--hard", "main")
-        step = next(step for step in STEPS if step.get("id") == step_id)
+        step = next(step for step in STEPS if step.get("id") == step_id or step.get("name") == step_id)
         return subprocess.run(["bash", "-c", step["run"]], cwd=repo,
                               env={**env, **values}, text=True, capture_output=True)
 
@@ -290,3 +293,28 @@ def test_automatic_merge_requires_workflow_pushed_head_and_ready_pull_request(sy
     result = run("merge", PR_NUMBER="91", EXPECTED_HEAD=head, AUTOMATED_HEAD="unowned")
     assert result.returncode != 0
     assert "did not push" in result.stdout
+
+
+def test_dependency_bumps_use_only_project_metadata(sync_repo):
+    repo, remote, commit, base, old, target, marker, state, output, run = sync_repo
+    metadata = ('[project]\ndependencies = ["comfy-kitchen==0.1.0", '
+                '"comfy-aimdo==0.2.0", "fork-model==9.0"]\n')
+    head = commit(base, {"pyproject.toml": metadata}, "Declare library dependencies")
+    git(repo, "update-ref", "refs/heads/main", head)
+    git(repo, "push", "origin", "main")
+    curl = state.parent / "bin/curl"
+    curl.write_text('#!/bin/sh\ncase "$*" in\n'
+                    '*comfy-kitchen*) echo \'{"info":{"version":"3.4.5"}}\' ;;\n'
+                    '*comfy-aimdo*) echo \'{"info":{"version":"6.7.8"}}\' ;;\nesac\n')
+    curl.chmod(0o755)
+
+    result = run("Check dependency releases")
+    assert result.returncode == 0, result.stderr
+    for package, previous, version in (("comfy-kitchen", "0.1.0", "3.4.5"),
+                                       ("comfy-aimdo", "0.2.0", "6.7.8")):
+        ref = f"refs/heads/upstream-sync-{package}"
+        assert git(remote, "show", f"{ref}:pyproject.toml") == metadata.replace(
+            f"{package}=={previous}", f"{package}=={version}",
+        ).strip()
+        assert git(remote, "diff", "--name-only", f"{head}..{ref}") == "pyproject.toml"
+        assert "requirements.txt" not in git(remote, "ls-tree", "--name-only", ref).splitlines()
