@@ -158,12 +158,9 @@ jobs:
               head=$(git rev-parse origin/upstream-sync)
               echo "head=$head" >> "$GITHUB_OUTPUT"
               if git cat-file -e "origin/upstream-sync:UPSTREAM_SYNC_CONFLICTS.md" 2>/dev/null; then
-                echo "conflict=true" >> "$GITHUB_OUTPUT"
-                {
-                  echo "conflicts<<EOF"
-                  git show origin/upstream-sync:UPSTREAM_SYNC_CONFLICTS.md | sed -n 's/^- `\(.*\)`$/\1/p'
-                  echo "EOF"
-                } >> "$GITHUB_OUTPUT"
+                # Replace the old raw-tree conflict marker with a transformed sync.
+                # It carries no owner resolution and is safe to regenerate.
+                :
               else
                 echo "conflict=false" >> "$GITHUB_OUTPUT"
                 guarded=$(write_guarded_paths origin/upstream-sync)
@@ -172,8 +169,8 @@ jobs:
                   printf '%s\n' "$guarded"
                   echo "EOF"
                 } >> "$GITHUB_OUTPUT"
+                exit 0
               fi
-              exit 0
             fi
             owner_commits=$(python3 - "$existing_pr" <<'PY'
           import re
@@ -224,76 +221,23 @@ jobs:
 
           git switch --force-create upstream-sync origin/main
           base=$(git rev-parse HEAD)
-          conflicts=()
-          if ! git merge-recursive "$recorded" -- "$base" "$target"; then
-            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
-            unresolved=()
-            for path in "${conflicts[@]}"; do
-              stages=$(git ls-files -u -- "$path" | awk '{print $3}' | sort -u | paste -sd, -)
-              if [[ "$path" = dinkster_inference/* ]] && [ "$stages" = "3" ]; then
-                git add -- "$path"
-              else
-                unresolved+=("$path")
-              fi
-            done
-            conflicts=("${unresolved[@]}")
-          fi
-          if [ "${#conflicts[@]}" -gt 0 ]; then
-            printf '%s\n' "${conflicts[@]}" > /tmp/upstream-conflicts
-            git reset --hard "$base"
-            {
-              echo "# Upstream sync conflicts"
-              echo
-              echo "Upstream commit: \`$target\`"
-              echo
-              echo "The automatic merge stopped on these paths:"
-              echo
-              for path in "${conflicts[@]}"; do
-                printf -- '- `%s`\n' "$path"
-              done
-            } > UPSTREAM_SYNC_CONFLICTS.md
-            git add UPSTREAM_SYNC_CONFLICTS.md
-            git commit -m "Record upstream sync conflicts through ${target:0:8}"
-            git push --force-with-lease="refs/heads/upstream-sync:$expected_head" origin HEAD:upstream-sync
-            echo "conflict=true" >> "$GITHUB_OUTPUT"
-            {
-              echo "conflicts<<EOF"
-              cat /tmp/upstream-conflicts
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           echo "conflict=false" >> "$GITHUB_OUTPUT"
-
-          # New inference files may not be recognized as part of the package rename.
-          if [ -d comfy ]; then
-            while IFS= read -r -d '' source; do
-              # The installed alias is packaging, not an upstream inference file.
-              [ "$source" = "comfy/__init__.py" ] && continue
-              destination="dinkster_inference/${source#comfy/}"
-              mkdir -p "$(dirname "$destination")"
-              mv "$source" "$destination"
-              git add "$source" "$destination"
-            done < <(find comfy -type f -print0)
+          baseline_checkout=$(mktemp -d)
+          target_checkout=$(mktemp -d)
+          cleanup() {
+            git worktree remove --force "$baseline_checkout" 2>/dev/null || true
+            git worktree remove --force "$target_checkout" 2>/dev/null || true
+            rmdir "$baseline_checkout" "$target_checkout" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          git worktree add --detach "$baseline_checkout" "$recorded"
+          git worktree add --detach "$target_checkout" "$target"
+          if ! python3 tools/regenerate_upstream_library.py \
+            --baseline "$baseline_checkout" --upstream "$target_checkout" --destination .; then
+            git reset --hard "$base"
+            echo "::error::The transformed library delta could not carry a fork change."
+            exit 1
           fi
-
-          # Preserve the inference-only boundary. Only upstream inference, retained
-          # library tests, and requirements changes flow through an automatic sync.
-          while IFS= read -r -d '' path; do
-            case "$path" in
-              dinkster_inference/*|tests-unit/comfy_test/*|tests-unit/comfy_quant/*|node_helpers.py|requirements.txt)
-                ;;
-              *)
-                if git cat-file -e "$base:$path" 2>/dev/null; then
-                  git checkout "$base" -- "$path"
-                else
-                  git rm -rf --ignore-unmatch -- "$path"
-                fi
-                ;;
-            esac
-          done < <(git diff --cached --name-only -z)
-
-          python3 tools/rewrite_upstream_imports.py dinkster_inference tests-unit/comfy_test tests-unit/comfy_quant node_helpers.py
           python3 - "$target" <<'PY'
           import re
           import sys
@@ -316,6 +260,8 @@ jobs:
           tree=$(git write-tree)
           commit=$(printf 'Sync ComfyUI upstream through %s\n' "${target:0:8}" | git commit-tree "$tree" -p "$base" -p "$target")
           git reset --hard "$commit"
+          python3 tools/check_upstream_parity.py \
+            --baseline "$baseline_checkout" --upstream "$target_checkout" --destination .
           git push --force-with-lease="refs/heads/upstream-sync:$expected_head" origin HEAD:upstream-sync
           head=$(git rev-parse HEAD)
           echo "head=$head" >> "$GITHUB_OUTPUT"
@@ -462,15 +408,10 @@ jobs:
           from pathlib import Path
 
           package = sys.argv[1]
-          pins = []
-          for filename in ("requirements.txt", "pyproject.toml"):
-              match = re.search(rf'\b{re.escape(package)}==([^"\s,]+)', Path(filename).read_text())
-              if match is None:
-                  raise SystemExit(f"{filename} does not pin {package}")
-              pins.append(match.group(1))
-          if pins[0] != pins[1]:
-              raise SystemExit(f"{package} pins disagree: {pins}")
-          print(pins[0])
+          match = re.search(rf'\b{re.escape(package)}==([^"\s,]+)', Path("pyproject.toml").read_text())
+          if match is None:
+              raise SystemExit(f"pyproject.toml does not pin {package}")
+          print(match.group(1))
           PY
             )
             latest=$(curl --fail --silent --show-error "https://pypi.org/pypi/${package}/json" | jq -r .info.version)
@@ -497,18 +438,17 @@ jobs:
           from pathlib import Path
 
           package, version = sys.argv[1:]
-          for filename in ("requirements.txt", "pyproject.toml"):
-              path = Path(filename)
-              updated, count = re.subn(
-                  rf'(\b{re.escape(package)}==)[^"\s,]+',
-                  rf'\g<1>{version}',
-                  path.read_text(),
-              )
-              if count != 1:
-                  raise SystemExit(f"expected one {package} pin in {filename}, found {count}")
-              path.write_text(updated)
+          path = Path("pyproject.toml")
+          updated, count = re.subn(
+              rf'(\b{re.escape(package)}==)[^"\s,]+',
+              rf'\g<1>{version}',
+              path.read_text(),
+          )
+          if count != 1:
+              raise SystemExit(f"expected one {package} pin in pyproject.toml, found {count}")
+          path.write_text(updated)
           PY
-            git add requirements.txt pyproject.toml
+            git add pyproject.toml
             git commit -m "Bump ${package} to ${latest}"
             if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
               git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
@@ -520,7 +460,7 @@ jobs:
             {
               echo "Refs Kosinkadink/comfy-vibe-station#479"
               echo
-              echo "Pin ${package} ${latest} in \`requirements.txt\` and \`pyproject.toml\`."
+              echo "Pin ${package} ${latest} in \`pyproject.toml\`."
               echo
               echo "Release: https://pypi.org/project/${package}/${latest}/"
             } > "$body"

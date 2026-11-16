@@ -13,6 +13,13 @@ ROOT = Path(__file__).resolve().parents[2]
 STEPS = yaml.safe_load((ROOT / ".github/workflows/upstream-sync.yml").read_text())["jobs"]["sync"]["steps"]
 
 
+def test_dependency_release_sync_uses_pyproject_only():
+    step = next(step for step in STEPS if step.get("name") == "Check dependency releases")
+
+    assert "pyproject.toml" in step["run"]
+    assert "requirements.txt" not in step["run"]
+
+
 def git(repo, *args, input=None):
     return subprocess.check_output(["git", *args], cwd=repo, input=input, text=True).strip()
 
@@ -46,16 +53,29 @@ def sync_repo(tmp_path, request):
         return git(repo, "hash-object", "-t", "commit", "-w", "--stdin",
                    input="\n".join(lines) + "\n\n" + subject + "\n")
 
-    recorded = commit(None, {"conflict.txt": "base\n"}, "Upstream base")
-    old = commit(recorded, {"conflict.txt": "old upstream\n"}, "Upstream update")
-    target = commit(old, {"conflict.txt": "new upstream\n"}, "New upstream update")
+    recorded = commit(None, {
+        "conflict.txt": "base\n",
+        "comfy/library.py": "value = 'base'\n",
+        "node_helpers.py": "pass\n",
+    }, "Upstream base")
+    old = commit(recorded, {
+        "conflict.txt": "old upstream\n",
+        "comfy/library.py": "value = 'old upstream'\n",
+    }, "Upstream update")
+    target = commit(old, {
+        "conflict.txt": "new upstream\n",
+        "comfy/library.py": "value = 'new upstream'\n",
+    }, "New upstream update")
     ledger = f"Upstream fork point: `{recorded}`\n"
     base = commit(recorded, {
         "conflict.txt": "base\n" if getattr(request, "param", "conflict") == "clean" else "fork\n",
         "docs/ledger.md": ledger,
         "UPSTREAM_SYNC_GUARDED_PATHS": "docs/ledger.md\n",
         "tools/rewrite_upstream_imports.py": (ROOT / "tools/rewrite_upstream_imports.py").read_text(),
+        "tools/regenerate_upstream_library.py": (ROOT / "tools/regenerate_upstream_library.py").read_text(),
+        "tools/check_upstream_parity.py": (ROOT / "tools/check_upstream_parity.py").read_text(),
         "dinkster_inference/stub.py": "",
+        "dinkster_inference/library.py": "value = 'base'\n",
         "tests-unit/comfy_test/stub.py": "",
         "tests-unit/comfy_quant/stub.py": "",
         "node_helpers.py": "",
@@ -116,7 +136,7 @@ s = json.loads(Path(os.environ["FAKE_GITHUB"]).read_text())
 a = sys.argv[1:]
 def real(*args, input=None):
     return subprocess.check_output([s["git"], *args], input=input, text=True).strip()
-if a[0] == "merge-recursive" and "concurrent_head" in s:
+if a[:2] == ["worktree", "add"] and "concurrent_head" in s:
     real("--git-dir=" + s["remote"], "update-ref", "refs/heads/upstream-sync", s["concurrent_head"])
 if a[0] in ("commit", "commit-tree"):
     tree = real("write-tree") if a[0] == "commit" else a[1]
@@ -174,6 +194,7 @@ def test_sync_preserves_owner_history_and_reports_upstream(sync_repo, owner_chan
 def test_sync_replaces_inactive_or_already_merged_owner_history(sync_repo, replacement):
     repo, remote, commit, base, old, target, marker, state, output, run = sync_repo
     files = {"docs/ledger.md": f"Upstream fork point: `{old}`\n", "UPSTREAM_SYNC_CONFLICTS.md": None,
+             "dinkster_inference/library.py": "value = 'old upstream'\n",
              "dinkster_inference/owner.py": "owner work\n"}
     head = commit(marker, files, "Owner resolution")
     git(repo, "push", "origin", f"{head}:refs/heads/upstream-sync")
