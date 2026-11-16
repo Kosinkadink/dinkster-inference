@@ -42,7 +42,11 @@ jobs:
             exit 0
           fi
           runs=$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?branch=main&head_sha=$SOURCE&status=success")
-          test "$(jq '[.workflow_runs[] | select(.head_sha == env.SOURCE and .event == "push")] | length' <<< "$runs")" -gt 0
+          if [ "$(jq '[.workflow_runs[] | select(.head_sha == env.SOURCE and .event == "push")] | length' <<< "$runs")" -eq 0 ]; then
+            # CI for this commit is still running or failed; its completion event runs this job again.
+            echo "Skip main commit without a successful CI run yet: $SOURCE"
+            exit 0
+          fi
           git remote add upstream https://github.com/Comfy-Org/ComfyUI.git
           git fetch --no-tags upstream master '+refs/tags/*:refs/upstream-tags/*'
           echo "current=true" >> "$GITHUB_OUTPUT"

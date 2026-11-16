@@ -13,13 +13,6 @@ ROOT = Path(__file__).resolve().parents[2]
 STEPS = yaml.safe_load((ROOT / ".github/workflows/upstream-sync.yml").read_text())["jobs"]["sync"]["steps"]
 
 
-def test_dependency_release_sync_uses_pyproject_only():
-    step = next(step for step in STEPS if step.get("name") == "Check dependency releases")
-
-    assert "pyproject.toml" in step["run"]
-    assert "requirements.txt" not in step["run"]
-
-
 def git(repo, *args, input=None):
     return subprocess.check_output(["git", *args], cwd=repo, input=input, text=True).strip()
 
@@ -302,50 +295,21 @@ def test_automatic_merge_requires_workflow_pushed_head_and_ready_pull_request(sy
     assert "did not push" in result.stdout
 
 
-@pytest.mark.parametrize("path, accepted", [
-    ("comfy/comfy_types/examples/example_nodes.py", True),
-    ("comfy/comfy_types/README.md", True),
-    ("comfy/comfy_types/node_typing.py", True),
-    ("comfy/new_application.py", False),
+@pytest.mark.parametrize("path, carried", [
+    ("comfy/comfy_types/examples/example_nodes.py", False),
+    ("comfy/comfy_types/README.md", False),
+    ("comfy/comfy_types/node_typing.py", False),
+    ("comfy/new_model.py", True),
 ])
-def test_sync_filters_removed_files_and_refuses_unclassified_additions(sync_repo, path, accepted):
+def test_sync_lists_new_upstream_library_files_and_skips_excluded_ones(sync_repo, path, carried):
     repo, remote, commit, base, old, target, marker, state, output, run = sync_repo
-    target = commit(target, {path: "application = True\n"}, "Add upstream file")
+    target = commit(target, {path: "value = True\n"}, "Add upstream file")
     git(repo, "update-ref", "refs/remotes/upstream/master", target)
     result = run("upstream")
-    head = git(remote, "rev-parse", "refs/heads/upstream-sync")
-    if accepted:
-        assert result.returncode == 0, result.stderr
-        assert head != marker
-        assert path.replace("comfy/", "dinkster_inference/", 1) not in git(
-            remote, "ls-tree", "-r", "--name-only", head,
-        ).splitlines()
-    else:
-        assert result.returncode != 0
-        assert "Unclassified repository file: dinkster_inference/new_application.py" in result.stderr
-        assert head == marker
-
-
-def test_dependency_bumps_use_only_project_metadata(sync_repo):
-    repo, remote, commit, base, old, target, marker, state, output, run = sync_repo
-    metadata = ('[project]\ndependencies = ["comfy-kitchen==0.1.0", '
-                '"comfy-aimdo==0.2.0", "fork-model==9.0"]\n')
-    head = commit(base, {"pyproject.toml": metadata}, "Declare library dependencies")
-    git(repo, "update-ref", "refs/heads/main", head)
-    git(repo, "push", "origin", "main")
-    curl = state.parent / "bin/curl"
-    curl.write_text('#!/bin/sh\ncase "$*" in\n'
-                    '*comfy-kitchen*) echo \'{"info":{"version":"3.4.5"}}\' ;;\n'
-                    '*comfy-aimdo*) echo \'{"info":{"version":"6.7.8"}}\' ;;\nesac\n')
-    curl.chmod(0o755)
-
-    result = run("Check dependency releases")
     assert result.returncode == 0, result.stderr
-    for package, previous, version in (("comfy-kitchen", "0.1.0", "3.4.5"),
-                                       ("comfy-aimdo", "0.2.0", "6.7.8")):
-        ref = f"refs/heads/upstream-sync-{package}"
-        assert git(remote, "show", f"{ref}:pyproject.toml") == metadata.replace(
-            f"{package}=={previous}", f"{package}=={version}",
-        ).strip()
-        assert git(remote, "diff", "--name-only", f"{head}..{ref}") == "pyproject.toml"
-        assert "requirements.txt" not in git(remote, "ls-tree", "--name-only", ref).splitlines()
+    head = git(remote, "rev-parse", "refs/heads/upstream-sync")
+    assert head != marker
+    library_path = path.replace("comfy/", "dinkster_inference/", 1)
+    assert (library_path in git(remote, "ls-tree", "-r", "--name-only", head).splitlines()) == carried
+    inventory = git(remote, "show", f"{head}:tools/library_files.txt").splitlines()
+    assert (f"library {library_path}" in inventory) == carried

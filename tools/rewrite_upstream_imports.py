@@ -16,21 +16,41 @@ REWRITES = (
 )
 
 
+def ascii_source(source: str) -> str:
+    """Escape non-ASCII tokens where they stand; every other character is kept as written.
+
+    `tokenize.untokenize` is not used: its spacing differs between Python releases.
+    """
+    if source.isascii():
+        return source
+    lines = io.StringIO(source).readlines()
+    starts = [0]
+    for line in lines:
+        starts.append(starts[-1] + len(line))
+    pieces = []
+    position = 0
+    for token in tokenize.generate_tokens(iter(lines).__next__):
+        if token.string.isascii():
+            continue
+        if token.type == tokenize.STRING:
+            value = ascii(ast.literal_eval(token.string))
+        else:
+            value = token.string.encode("ascii", "backslashreplace").decode("ascii")
+        start = starts[token.start[0] - 1] + token.start[1]
+        end = starts[token.end[0] - 1] + token.end[1]
+        if source[start:end] != token.string:
+            raise SystemExit(f"token position does not match its text at line {token.start[0]}")
+        pieces += [source[position:start], value]
+        position = end
+    return "".join(pieces) + source[position:]
+
+
 def rewrite(path: Path) -> bool:
     original = path.read_text()
     updated = original
     for pattern, replacement in REWRITES:
         updated = pattern.sub(replacement, updated)
-    tokens = []
-    for token in tokenize.generate_tokens(io.StringIO(updated).readline):
-        if not token.string.isascii():
-            if token.type == tokenize.STRING:
-                value = ascii(ast.literal_eval(token.string))
-            else:
-                value = token.string.encode("ascii", "backslashreplace").decode("ascii")
-            token = token._replace(string=value)
-        tokens.append(token)
-    updated = tokenize.untokenize(tokens)
+    updated = ascii_source(updated)
     if updated == original:
         return False
     path.write_text(updated)

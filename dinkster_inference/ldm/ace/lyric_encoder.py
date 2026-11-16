@@ -761,7 +761,7 @@ class EspnetRelPositionalEncoding(torch.nn.Module):
         pe = torch.cat([pe_positive, pe_negative], dim=1)
         self.pe = pe.to(device=x.device, dtype=x.dtype)
 
-    def forward(self, x: torch.Tensor, offset: Union[int, torch.Tensor] = 0)\
+    def forward(self, x: torch.Tensor, offset: Union[int, torch.Tensor] = 0) \
             -> Tuple[torch.Tensor, torch.Tensor]:
         """Add positional encoding.
 

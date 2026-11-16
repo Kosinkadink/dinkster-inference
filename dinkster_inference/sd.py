@@ -905,7 +905,7 @@ class VAE:
                 self.memory_used_encode = lambda shape, dtype, num_layers = 8, kv_cache_multiplier = 0:\
                     estimate_memory(shape, dtype, num_layers, kv_cache_multiplier)
 
-                self.memory_used_decode = lambda shape, dtype, num_layers = 16, kv_cache_multiplier = 2:\
+                self.memory_used_decode = lambda shape, dtype, num_layers = 16, kv_cache_multiplier = 2: \
                     estimate_memory(shape, dtype, num_layers, kv_cache_multiplier)
 
                 self.first_stage_model = dinkster_inference.ldm.hunyuan3d.vae.ShapeVAE()

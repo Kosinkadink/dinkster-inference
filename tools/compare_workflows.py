@@ -10,6 +10,7 @@ import importlib.metadata
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -161,8 +162,10 @@ def run_worker(args):
 def run_comparison(args):
     args.output_dir.mkdir(parents=True, exist_ok=True)
     reference = subprocess.check_output(["git", "-C", str(args.upstream), "rev-parse", "HEAD"], text=True).strip()
-    if reference != args.reference:
-        raise ValueError(f"Upstream checkout is {reference}, expected {args.reference}")
+    ledger = Path(__file__).resolve().parents[1] / "docs/ledger.md"
+    expected = args.reference or re.search(r"`([0-9a-f]{40})`", ledger.read_text())[1]
+    if reference != expected:
+        raise ValueError(f"Upstream checkout is {reference}, expected {expected}")
     if subprocess.check_output(["git", "-C", str(args.upstream), "status", "--porcelain"], text=True):
         raise ValueError("Upstream checkout must be clean")
     cases = args.cases or [*SD_CASES, "h3" if args.h3_model else "flux"]
@@ -220,7 +223,7 @@ def run_comparison(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--upstream", type=Path, required=True)
-    parser.add_argument("--reference", default="bc5f880dbdd43e426077f42ccec53bb577ffee9f")
+    parser.add_argument("--reference", help="expected commit of --upstream; default: the commit in docs/ledger.md")
     parser.add_argument("--output-dir", type=Path, required=True)
     for name in ("checkpoint", "lora", "controlnet", "h3-model", "h3-clip", "h3-vae", "flux-checkpoint"):
         parser.add_argument("--" + name, type=Path)

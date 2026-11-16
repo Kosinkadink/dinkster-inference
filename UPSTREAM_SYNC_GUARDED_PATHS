@@ -1,8 +1,7 @@
-# Packaging and import infrastructure only; upstream library code has no fork seams.
+# The sync writes only transformed upstream files, docs/ledger.md, tools/library_files.txt and
+# dependency specifiers in pyproject.toml. A sync that changes anything below is not automatic.
 comfy/*
-node_helpers.py
-pyproject.toml
-tools/*
+tools/*.py
 tests-unit/comfy_test/rewrite_upstream_imports_test.py
 tests-unit/comfy_test/upstream_sync_test.py
 .github/workflows/*

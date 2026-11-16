@@ -17,6 +17,14 @@ jobs:
         run: python tools/check_library_files.py
       - name: Check library dependency declarations
         run: python tools/check_dependencies.py
+      - name: Check upstream files against the recorded upstream commit
+        run: |
+          set -euo pipefail
+          recorded=$(grep -oE '[0-9a-f]{40}' docs/ledger.md | head -n 1)
+          git init --quiet "$RUNNER_TEMP/upstream"
+          git -C "$RUNNER_TEMP/upstream" fetch --quiet --depth 1 https://github.com/Comfy-Org/ComfyUI.git "$recorded"
+          git -C "$RUNNER_TEMP/upstream" checkout --quiet FETCH_HEAD
+          python tools/check_upstream_parity.py --differences --declared tools/fork_differences.txt --upstream "$RUNNER_TEMP/upstream"
       - name: Build wheel
         run: |
           python -m pip install --upgrade build
@@ -27,6 +35,8 @@ jobs:
           python -m pip install -r tests-unit/requirements.txt
           python -m pip install ruff
       - name: Verify standalone imports
+        # Outside the checkout, so the import comes from the installed wheel.
+        working-directory: ${{ runner.temp }}
         run: |
           if ! python -c "import dinkster_inference.cli_args as c; c.args.cpu = True; import dinkster_inference.sd, dinkster_inference.samplers, dinkster_inference.model_management" 2>import-error.log; then
             message=$(sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' import-error.log)

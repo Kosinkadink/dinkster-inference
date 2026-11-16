@@ -703,7 +703,7 @@ class SAM3DBody(nn.Module):
             - scale_l_hands_mean
         ) / scale_l_hands_std
         # Right-hand global rotation flipped \u2192 used as left.
-        lhand_output["mhr_hand"]["joint_global_rots"][:, 78] =\
+        lhand_output["mhr_hand"]["joint_global_rots"][:, 78] = \
             lhand_output["mhr_hand"]["joint_global_rots"][:, 42].clone()
         lhand_output["mhr_hand"]["joint_global_rots"][:, 78, [1, 2], :] *= -1
         lhand_output["mhr_hand"]["hand"][:, :54] = lhand_output["mhr_hand"]["hand"][:, 54:]
@@ -752,9 +752,9 @@ class SAM3DBody(nn.Module):
         left_kps_full[:, :, 0] = width - left_kps_full[:, :, 0] - 1
         body_right_kps_full = pose_output["mhr"]["pred_keypoints_2d"][:, [kps_right_wrist_idx]].clone()
         body_left_kps_full = pose_output["mhr"]["pred_keypoints_2d"][:, [kps_left_wrist_idx]].clone()
-        right_kps_dist = (right_kps_full - body_right_kps_full).flatten(0, 1).norm(dim=-1)\
+        right_kps_dist = (right_kps_full - body_right_kps_full).flatten(0, 1).norm(dim=-1) \
             / batch_lhand["bbox_scale"].flatten(0, 1)[:, 0]
-        left_kps_dist = (left_kps_full - body_left_kps_full).flatten(0, 1).norm(dim=-1)\
+        left_kps_dist = (left_kps_full - body_left_kps_full).flatten(0, 1).norm(dim=-1) \
             / batch_rhand["bbox_scale"].flatten(0, 1)[:, 0]
         hand_wrist_kps2d_valid_mask = torch.stack(
             [left_kps_dist < hand_wrist_kps2d_thresh,

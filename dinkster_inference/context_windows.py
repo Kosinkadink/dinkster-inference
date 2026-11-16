@@ -528,7 +528,7 @@ class IndexListContextHandler(ContextHandlerABC):
                             if handled:
                                 continue
                             if isinstance(cond_value, torch.Tensor):
-                                if (self.dim < cond_value.ndim and cond_value.size(self.dim) == x_in.size(self.dim)) or\
+                                if (self.dim < cond_value.ndim and cond_value.size(self.dim) == x_in.size(self.dim)) or \
                                    (cond_value.ndim < self.dim and cond_value.size(0) == x_in.size(self.dim)):
                                     new_cond_item[cond_key] = window.get_tensor(cond_value, device)
                             # Handle audio_embed (temporal dim is 1)
@@ -544,7 +544,7 @@ class IndexListContextHandler(ContextHandlerABC):
                                     new_cond_item[cond_key] = cond_value._copy_with(sliced_vace)
                             # if has cond that is a Tensor, check if needs to be subset
                             elif hasattr(cond_value, "cond") and isinstance(cond_value.cond, torch.Tensor):
-                                if  (self.dim < cond_value.cond.ndim and cond_value.cond.size(self.dim) == x_in.size(self.dim)) or\
+                                if  (self.dim < cond_value.cond.ndim and cond_value.cond.size(self.dim) == x_in.size(self.dim)) or \
                                     (cond_value.cond.ndim < self.dim and cond_value.cond.size(0) == x_in.size(self.dim)):
                                     new_cond_item[cond_key] = cond_value._copy_with(window.get_tensor(cond_value.cond, device, retain_index_list=self.cond_retain_index_list))
                             elif cond_key == "num_video_frames": # for SVD
