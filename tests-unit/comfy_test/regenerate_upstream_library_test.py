@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from tools.regenerate_upstream_library import regenerate
 
 

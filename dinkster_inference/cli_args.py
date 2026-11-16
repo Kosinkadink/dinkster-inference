@@ -128,4 +128,3 @@ elif args.fast == []:
 # '--fast' is provided with a list of performance features, use that list
 else:
     args.fast = set(args.fast)
-

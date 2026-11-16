@@ -204,7 +204,7 @@ def strip_application_options(source: str, kept_options: set[str], external_name
             first -= 1  # a comment directly above describes the removed statement
         lines_removed.update(range(first, node.end_lineno + 1))
     kept = "".join(line for number, line in enumerate(lines, start=1) if number not in lines_removed)
-    return re.sub(r"\n{4,}", "\n\n\n", kept)
+    return re.sub(r"\n{4,}", "\n\n\n", kept).rstrip() + "\n"
 
 
 def strip_excluded_imports(path: Path, upstream: Path) -> bytes:
