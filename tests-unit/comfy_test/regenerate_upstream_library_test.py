@@ -35,8 +35,15 @@ def test_regenerate_carries_fork_changes_and_rewrites_upstream_scope(tmp_path):
         "fork_only = True\nimport dinkster_inference\nvalue = 'base'\n"
     )
     (destination / "dinkster_inference" / "future_model.py").write_text("fork_only = True\n")
+    for root in (baseline, upstream):
+        examples = root / "comfy/comfy_types/examples"
+        examples.mkdir(parents=True)
+        (examples / "example_nodes.py").write_text(f"application = {str(root)!r}\n")
+        (examples.parent / "README.md").write_text(str(root))
+        (examples.parent / "node_typing.py").write_text(f"application = {str(root)!r}\n")
     regenerate(baseline, upstream, destination)
 
+    assert not (destination / "dinkster_inference/comfy_types").exists()
     assert (destination / "dinkster_inference" / "library.py").read_text() == (
         "fork_only = True\nimport dinkster_inference\nvalue = 'base'\nupstream = True\n"
     )

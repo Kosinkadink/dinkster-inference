@@ -1,46 +1,15 @@
 # dinkster-inference
 
-This distribution packages upstream ComfyUI's inference library as
-`dinkster_inference`. The `comfy` import name aliases the same modules, not a
-second instance of model-management state. ComfyUI's application, server and
-node packages are not distributed here. Modules absent from inference can
-resolve from a ComfyUI checkout's `comfy/` directory on `sys.path`; inference
-modules always take precedence over checkout modules.
+Dinkster's inference library provides model loading, sampling, conditioning,
+text/image/audio encoders, device management and inference runtime resources.
+The `comfy` import name aliases `dinkster_inference` modules without duplicating
+model-management state. The distribution does not include an application.
 
 ```bash
 python -m pip install .
 ```
 
-## Releases
-
-Consumers pin exact versions and record PyPI wheel hashes in their lockfile.
-After a landed upstream sync passes main CI, release automation creates an
-immutable `vX.Y.Z.devN` tag at that inference commit and publishes it to PyPI.
-`X.Y.Z` is the next patch after the latest stable inference release; `N` is the
-source commit count. Tags are retained even if a package is removed from PyPI.
-Superseded CI completions do not publish. The next successful current-main check
-recovers unpublished syncs since release automation was installed, in source order.
-
-An hourly check also detects ComfyUI stable tags contained by the recorded
-upstream fork point. Each newly contained stable tag produces the next stable
-inference patch release, with the ComfyUI tag recorded in the annotated inference
-tag. Multiple upstream tags produce separate inference releases. A stable tag
-arriving after the sync is detected without needing another source change.
-
-The release tag sets the built distribution version without changing the source
-commit. Wheels and sdists include `dinkster_inference/_release.json` with the
-version, inference source commit and upstream commit. The annotated tag records
-the same source identity. Missing-prerelease fallback can therefore prove commit
-containment rather than guessing from version numbers. Branches and pull requests
-build without publishing; ordinary consumers keep their exact pins.
-
-Trusted publication uses owner `Kosinkadink`, repository `dinkster-inference`,
-workflow `release.yml`, environment `pypi`. Tag automation uses the existing
-release bot credential; no PyPI API token is stored. Failed publication is not
-hidden by moving or replacing a tag.
-
-As in upstream ComfyUI, CPU callers select CPU execution before importing model
-management or loaders:
+CPU callers select CPU execution before importing model management or loaders:
 
 ```python
 import dinkster_inference.cli_args as cli_args
@@ -50,45 +19,55 @@ import dinkster_inference.sd
 assert comfy.sd is dinkster_inference.sd
 ```
 
-See [upstream provenance](docs/ledger.md) for the fork point and omitted
-application tests. `python tools/check_upstream_parity.py --baseline /path/to/recorded-ComfyUI --upstream /path/to/new-ComfyUI`
-checks that the transformed upstream delta has been carried while retaining fork
-changes and fork-only files. New upstream files use
-`tools/rewrite_upstream_imports.py` for import renaming and ASCII source spelling;
-escaped string values and non-ASCII tokenizer resource data retain their meaning.
+## Development and upstream sync
 
-## Workflow comparison
-
-Install a built wheel and its CUDA dependencies in a separate environment, then
-run the harness with that environment's Python. The fork worker uses the installed
-package with isolated imports; the reference worker imports a clean, detached
-ComfyUI checkout at the recorded fork point. Both use the same interpreter,
-models, seed and deterministic PyTorch settings in separate processes.
+Runtime dependencies are declared only in `pyproject.toml`. Install test tools
+with `python -m pip install -r tests-unit/requirements.txt ruff build PyYAML`.
+Run the repository checks with:
 
 ```bash
-CUDA_VISIBLE_DEVICES=1 /path/to/venv/bin/python -I tools/compare_workflows.py \
-  --upstream /path/to/ComfyUI --output-dir /path/to/results \
-  --checkpoint /path/to/v1-5-pruned-emaonly-fp16.safetensors \
-  --lora /path/to/lcm-lora-sdv1-5.safetensors \
-  --controlnet /path/to/control_v11p_sd15_canny.safetensors \
-  --h3-model /path/to/minimax_h3_fl2va_int8_convrot.safetensors \
-  --h3-clip /path/to/qwen3vl_32b_minimax_h3_int8_convrot.safetensors \
-  --h3-vae /path/to/minimax_h3_video_vae_fp16.safetensors
+python tools/check_library_files.py
+python tools/check_dependencies.py
+python -m ruff check dinkster_inference comfy node_helpers.py tools
+python -m pytest -q tests-unit
+python -m build
 ```
 
-The five SD1.5 cases use 512x512, seed 459, Euler/normal, 20 steps and CFG 7:
-baseline; LoRA strength 0.8; five linearly interpolated hook LoRA keyframes from
-strength 0 to 1 over the first half of sampling (first guarantee 1, subsequent
-guarantees 0, matching upstream's interpolated-keyframe node); ControlNet strength
-1 over timestep range 0.0-0.6 using a fixed asymmetric edge map; and overlapping
-16-frame context windows over a 32-frame batch. H3 uses 1344x768, 124 frames,
-seed 1064, Euler/normal, 20 steps and CFG 6, with the 32B text encoder on CPU
-on both sides to avoid GPU dequantization memory exhaustion. If H3 weights are absent, supply a
-bundled Flux dev checkpoint via `--flux-checkpoint` instead (512x512, four steps,
-seed 459, CFG 1, guidance 3.5). `--cases` selects individual cases for diagnosis.
+`tools/library_files.txt` classifies every tracked file as library code/runtime
+data, packaging, release/upstream/dependency tooling, tests or LICENSE. Classify
+new files there only when they serve one of those purposes. CI rejects missing
+or unclassified entries. Packaging includes only Python modules and runtime
+JSON, tokenizer model and text resources.
 
-`comparison.json` records input hashes, installed-package provenance, environment,
-per-case raw latent and PNG hashes, and maximum absolute differences. The result
-directory also contains tensors, PNGs and worker logs. Exit status is zero only
-when every selected case is identical; missing model files, worker errors and
-non-finite values never count as parity. No model downloads happen in the harness.
+The [sync ledger](docs/ledger.md) supplies the upstream fork point.
+`tools/regenerate_upstream_library.py --baseline /path/to/recorded-upstream
+--upstream /path/to/new-upstream --destination .` transforms both revisions and
+merges their library delta while preserving fork changes. Node-authoring
+examples and node types are excluded. `tools/check_upstream_parity.py` accepts
+the same arguments and verifies that the transformed delta is already present.
+The sync workflow checks the classified inventory before pushing; previously
+unseen upstream files require classification before they can land.
+
+`tools/compare_workflows.py --help` describes the isolated installed-wheel
+comparison harness. It uses caller-supplied local models and a reference
+checkout; it does not download model artifacts.
+
+## Releases
+
+Consumers pin exact versions and PyPI wheel hashes. After a landed upstream
+sync passes main CI, automation publishes an immutable `vX.Y.Z.devN` release.
+`X.Y.Z` is the next patch after the latest stable inference release; `N` is the
+source commit count. An hourly check detects newly contained upstream stable
+tags and publishes separate stable inference patch releases. Superseded CI
+completions do not publish; the next successful current-main check recovers
+unpublished syncs in source order.
+
+Release tags set the built version without changing the source commit.
+Distributions contain `dinkster_inference/_release.json` with the version,
+inference source commit and upstream commit. Annotated tags record the same
+identity. Development/prerelease publication is wheel-only; stable releases
+also include source distributions. Failed publication never moves a tag.
+
+Trusted PyPI publication uses repository `Kosinkadink/dinkster-inference`,
+workflow `release.yml`, environment `pypi`. Branches and pull requests build
+without publishing. Source licensing is GPL-3.0; see [LICENSE](LICENSE).

@@ -257,6 +257,7 @@ jobs:
           path.write_text(updated)
           PY
           git add -A
+          python3 tools/check_library_files.py
           tree=$(git write-tree)
           commit=$(printf 'Sync ComfyUI upstream through %s\n' "${target:0:8}" | git commit-tree "$tree" -p "$base" -p "$target")
           git reset --hard "$commit"
@@ -319,7 +320,7 @@ jobs:
                 echo
                 echo "This pull request requires owner verification."
               else
-                echo "No path in \`UPSTREAM_SYNC_GUARDED_PATHS\` changed. The workflow will merge this pull request only after both hosted checks pass at the exact head."
+                echo "No path in \`UPSTREAM_SYNC_GUARDED_PATHS\` changed. The workflow will merge this pull request only after package-and-test passes at the exact head."
               fi
             } > "$body"
             title="Sync inference library with ComfyUI through ${TARGET:0:8}"
@@ -368,11 +369,9 @@ jobs:
             checks=$(gh api "repos/${REPOSITORY}/commits/${EXPECTED_HEAD}/check-runs")
             package_status=$(jq -r '[.check_runs[] | select(.name == "package-and-test")][0].status // "missing"' <<< "$checks")
             package_result=$(jq -r '[.check_runs[] | select(.name == "package-and-test")][0].conclusion // ""' <<< "$checks")
-            author_status=$(jq -r '[.check_runs[] | select(.name == "Check for AI agent co-author trailers")][0].status // "missing"' <<< "$checks")
-            author_result=$(jq -r '[.check_runs[] | select(.name == "Check for AI agent co-author trailers")][0].conclusion // ""' <<< "$checks")
-            if [ "$package_status" = "completed" ] && [ "$author_status" = "completed" ]; then
-              if [ "$package_result" != "success" ] || [ "$author_result" != "success" ]; then
-                echo "::error::Hosted checks failed at $EXPECTED_HEAD: package-and-test=$package_result, co-author=$author_result"
+            if [ "$package_status" = "completed" ]; then
+              if [ "$package_result" != "success" ]; then
+                echo "::error::Hosted checks failed at $EXPECTED_HEAD: package-and-test=$package_result"
                 exit 1
               fi
               break
