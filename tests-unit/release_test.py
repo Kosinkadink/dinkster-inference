@@ -62,7 +62,15 @@ def test_release_tag_waits_for_exact_source_push_ci(tmp_path, ci_branch, ci_sour
 
 
 @pytest.mark.parametrize("changes", ["library", "application", "historical"])
-def test_stable_release_uses_tag_scope_and_retains_fork_changes(tmp_path, changes):
+def test_stable_release_uses_tag_scope_and_retains_fork_changes(tmp_path, changes, monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    # Disposable histories inherit source identity rather than requiring host Git configuration.
+    for name, field in (("AUTHOR_NAME", "%an"), ("AUTHOR_EMAIL", "%ae"),
+                        ("COMMITTER_NAME", "%cn"), ("COMMITTER_EMAIL", "%ce")):
+        identity = subprocess.check_output(
+            ["git", "-C", str(root), "show", "-s", f"--format={field}", "HEAD"], text=True,
+        ).strip()
+        monkeypatch.setenv(f"GIT_{name}", identity)
     repo = tmp_path / "repo"
     repo.mkdir()
 
