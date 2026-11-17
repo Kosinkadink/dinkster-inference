@@ -19,6 +19,7 @@ library dinkster_inference/audio_encoders/whisper.py
 library dinkster_inference/background_removal/birefnet.json
 library dinkster_inference/background_removal/birefnet.py
 library dinkster_inference/bg_removal_model.py
+library dinkster_inference/checkpoint_convert.py
 library dinkster_inference/cldm/cldm.py
 library dinkster_inference/cldm/control_types.py
 library dinkster_inference/cldm/dit_embedder.py
@@ -229,7 +230,6 @@ library dinkster_inference/ldm/seedvr/model.py
 library dinkster_inference/ldm/seedvr/vae.py
 library dinkster_inference/ldm/sensenova/__init__.py
 library dinkster_inference/ldm/sensenova/conditioning.py
-library dinkster_inference/ldm/sensenova/interleave.py
 library dinkster_inference/ldm/sensenova/model.py
 library dinkster_inference/ldm/sensenova/sampling.py
 library dinkster_inference/ldm/supir/__init__.py
