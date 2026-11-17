@@ -87,16 +87,24 @@ def test_stable_release_uses_tag_scope_and_retains_fork_changes(tmp_path, change
     model = "TAG = 0\n" + "\n" * 20 + "FORK = 0\n"
     (repo / "comfy/model.py").write_text(model)
     (repo / "node_helpers.py").write_text("")
+    (repo / "nodes.py").write_text("APPLICATION = True\n")
+    original = "tests-unit/comfy_test/application_test.py"
+    adaptation = "tests-unit/comfy_test/adapted_test.py"
+    (repo / original).parent.mkdir(parents=True)
+    (repo / original).write_text("import nodes\n")
     base = commit("Upstream stable baseline")
     git("update-ref", "refs/upstream-tags/v0.45.0", base)
     git("switch", "-c", "upstream-stable")
     if changes == "library":
         (repo / "comfy/model.py").write_text(model.replace("TAG = 0", "TAG = 3"))
+        (repo / original).unlink()
     (repo / "partner_nodes.py").write_text("EXCLUDED = True\n")
     target = commit("Stable tag branch")
     git("update-ref", "refs/upstream-tags/v0.45.1", target)
     git("switch", "-c", "main", base)
     shutil.rmtree(repo / "comfy")
+    (repo / original).unlink()
+    (repo / "nodes.py").unlink()
     (repo / "dinkster_inference").mkdir()
     (repo / "dinkster_inference/model.py").write_text(model.replace("FORK = 0", "FORK = 19"))
     (repo / "dinkster_inference/fork_only.py").write_text("OWNED = 23\n")
@@ -106,6 +114,10 @@ def test_stable_release_uses_tag_scope_and_retains_fork_changes(tmp_path, change
     tools = Path(__file__).resolve().parents[1] / "tools"
     shutil.copytree(tools, repo / "tools", ignore=shutil.ignore_patterns("__pycache__"))
     (repo / "tools/fork_differences.txt").write_text("dinkster_inference/model.py\n")
+    (repo / "tools/adapted_upstream_tests.json").write_text(json.dumps({adaptation: original}))
+    (repo / adaptation).write_text("def test_adapted():\n    assert False, 'retained adaptation blocks CI'\n")
+    fork_test = "tests-unit/comfy_test/fork_only_test.py"
+    (repo / fork_test).write_text("def test_fork_only():\n    assert True\n")
     inventory = repo / "tools/library_files.txt"
     inventory.write_text("".join(f"tooling {p.relative_to(repo).as_posix()}\n"
                                  for p in sorted(repo.rglob("*"))
@@ -126,6 +138,17 @@ def test_stable_release_uses_tag_scope_and_retains_fork_changes(tmp_path, change
         source = commit("Synced master")
     else:
         source = baseline
+    previous = None
+    if changes == "library":
+        (repo / "docs/ledger.md").write_text(f"Upstream fork point: `{target}`.\n")
+        git("add", "docs/ledger.md")
+        previous_identity = {"upstreamTag": "v0.45.1", "upstreamTagCommit": target,
+                             "version": "0.1.3", "mainSourceCommit": source}
+        previous = git("commit-tree", git("write-tree"), "-p", source, "-p", target,
+                       "-m", "Old preparation\n\n" + json.dumps(previous_identity))
+        git("restore", "--source=HEAD", "--staged", "--worktree", "docs/ledger.md")
+        git("update-ref", "refs/remotes/origin/release/upstream-v0.45.1", previous)
+        git("update-ref", "refs/heads/release/upstream-v0.45.1", source)
     command = [sys.executable, str(repo / "tools/inference_release.py"), "plan", "--source", source]
     releases = json.loads(subprocess.check_output(command, cwd=repo, text=True))
     stable = next(row for row in releases if row.get("upstreamTag") == "v0.45.1")
@@ -147,6 +170,13 @@ def test_stable_release_uses_tag_scope_and_retains_fork_changes(tmp_path, change
     files = git("ls-tree", "-r", "--name-only", selected).splitlines()
     assert "partner_nodes.py" not in files
     assert "dinkster_inference/master_only.py" not in files
+    assert fork_test in files
+    assert (adaptation in files) == (changes != "library")
+    assert stable["adaptedTestSources"] == {adaptation: original}
+    assert stable["excludedAdaptedTests"] == ({adaptation: original} if changes == "library" else {})
+    if previous:
+        git("merge-base", "--is-ancestor", previous, selected)
+        assert adaptation not in git("show", f"{selected}:tools/library_files.txt")
     assert git("rev-parse", "HEAD") == source
     assert json.loads(subprocess.check_output(command, cwd=repo, text=True)) == releases
     git("tag", "-a", "v0.1.3", selected, "-m", json.dumps(stable))
@@ -169,3 +199,8 @@ def test_stable_release_uses_tag_scope_and_retains_fork_changes(tmp_path, change
                         "prepare", "--version", "0.1.3"], cwd=repo, check=True)
     assert json.loads((repo / "dinkster_inference/_release.json").read_text()) == stable
     assert json.loads((repo / "release-provenance.json").read_text()) == stable
+    if changes != "library":
+        result = subprocess.run([sys.executable, "-m", "pytest", "-q", adaptation], cwd=repo,
+                                text=True, capture_output=True)
+        assert result.returncode == 1
+        assert "retained adaptation blocks CI" in result.stdout

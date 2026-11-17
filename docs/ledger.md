@@ -42,6 +42,17 @@ commit above, the entries of added and removed upstream files in
 specifier. Everything else is fork-owned: the `comfy` alias, packaging, tools,
 workflows and documents.
 
+## Adapted upstream tests in stable releases
+
+`tools/adapted_upstream_tests.json` records each fork-adapted test's upstream
+source path. A sync that adds an adaptation adds its mapping in the same
+change. Stable preparation keeps an adaptation only when that source path
+exists in the target tag, and records excluded test/source pairs in the
+release metadata. Tests without a mapping remain fork-only and are always
+carried. Main keeps every adaptation and runs the same CI suite unchanged.
+An adaptation whose source exists in a tag is kept even if it fails; that
+failure blocks publication.
+
 ## Fork changes to upstream files
 
 `tools/fork_differences.txt` lists them with the reason for each, and CI

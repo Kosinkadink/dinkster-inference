@@ -73,7 +73,8 @@ jobs:
             commit=$(jq -r .sourceCommit <<< "$release")
             branch=$(jq -r '.branch // empty' <<< "$release")
             if [ -n "$branch" ]; then
-              if ! git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+              remote=$(git rev-parse --verify "refs/remotes/origin/$branch" 2>/dev/null || true)
+              if [ "$remote" != "$commit" ]; then
                 git push origin "$commit:refs/heads/$branch"
               fi
             fi
