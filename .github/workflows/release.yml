@@ -1,6 +1,10 @@
 name: Python package release
 
 on:
+  workflow_run:
+    workflows: [Inference release tags]
+    types: [completed]
+    branches: [main]
   pull_request:
   push:
     branches: ["**"]
@@ -11,24 +15,66 @@ permissions:
 
 jobs:
   build:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.source.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Find historical stable source manifest
+        if: github.event_name == 'workflow_run'
+        id: manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '[.artifacts[] | select(.name == "stable-main-release" and .expired == false)] | length')
+          if [ "$count" -eq 1 ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/download-artifact@v4
+        if: steps.manifest.outputs.available == 'true'
+        with:
+          name: stable-main-release
+          path: ${{ runner.temp }}/stable-main-release
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Embed release source and version
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Select and validate immutable release source
+        id: source
         env:
-          RELEASE_VERSION: ${{ github.ref_name }}
-        run: python tools/inference_release.py prepare --version "${RELEASE_VERSION#v}"
+          HISTORICAL: ${{ steps.manifest.outputs.available == 'true' }}
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          set -euo pipefail
+          if [ "$HISTORICAL" = true ]; then
+            manifest="$RUNNER_TEMP/stable-main-release/inference-main-release.json"
+            jq -e 'length == 1 and .[0].releaseSource == "synced-main" and (.[0].sourceCommit | test("^[0-9a-f]{40}$")) and (.[0].version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$manifest"
+            source=$(jq -r '.[0].sourceCommit' "$manifest")
+            version=$(jq -r '.[0].version' "$manifest")
+            cp -R tools "$RUNNER_TEMP/inference-release-tools"
+            git checkout --detach "$source"
+            python "$RUNNER_TEMP/inference-release-tools/inference_release.py" prepare --version "$version"
+            cmp release-provenance.json <(jq -Sc '.[0]' "$manifest" | python -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True))')
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          elif [ -n "$RELEASE_TAG" ]; then
+            version=${RELEASE_TAG#v}
+            python tools/inference_release.py prepare --version "$version"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          fi
       - run: python -m pip install build twine
       - name: Build wheels, with source distributions only for stable tags
         env:
-          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          RELEASE_TAG: ${{ steps.source.outputs.version != '' && format('v{0}', steps.source.outputs.version) || '' }}
         run: |
           if [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             python -m build
@@ -43,7 +89,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.repository == 'Kosinkadink/dinkster-inference' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'Kosinkadink/dinkster-inference' && needs.build.outputs.version != ''
     needs: build
     runs-on: ubuntu-latest
     environment:

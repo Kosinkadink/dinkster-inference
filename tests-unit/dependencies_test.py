@@ -26,6 +26,9 @@ import pytest
     ('"Pillow"', 'import PIL\nimport importlib as imp\nimp.import_module(package="local", name=".requests")\n', None),
     ('"Pillow"', 'import PIL\nfrom requests import Session\n', "Undeclared dependency requests"),
     ('"Pillow", "requests"', 'import PIL\n', "Unused dependency requests"),
+    ('"Pillow"', 'import PIL\nif args.directml is not None:\n    import torch_directml\n', None),
+    ('"Pillow"', 'import PIL\nimport torch_directml\n', "Undeclared dependency torch-directml"),
+    ('"Pillow"', 'import PIL\nif args.directml is not None:\n    import requests\n', "Undeclared dependency requests"),
 ])
 def test_dependency_check_rejects_missing_and_unused_runtime_packages(tmp_path, dependencies, source, expected):
     (tmp_path / "tools").mkdir()
