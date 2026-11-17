@@ -176,6 +176,7 @@ def release_plan(source):
             }
         )
     upstream_tags = []
+    represented = []
     for ref in git(
         "for-each-ref", "refs/upstream-tags/", "--format=%(refname)"
     ).splitlines():
@@ -183,8 +184,13 @@ def release_plan(source):
         match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag)
         if match and tag not in published_upstream:
             commit = git("rev-parse", f"{ref}^{{commit}}")
-            if not contains(previous_upstream, commit):
-                upstream_tags.append((tuple(map(int, match.groups())), tag, commit))
+            number = tuple(map(int, match.groups()))
+            if contains(previous_upstream, commit):
+                represented.append(number)
+            else:
+                upstream_tags.append((number, tag, commit))
+    # The initial manual stable also predates older maintenance-branch tags.
+    upstream_tags = [row for row in upstream_tags if not represented or row[0] > max(represented)]
     # Publish in upstream version order so a pending branch keeps its reserved version.
     if upstream_tags:
         _, tag, commit = min(upstream_tags)

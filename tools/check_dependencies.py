@@ -36,6 +36,10 @@ def check(root):
                 )
         probes = {id(child) for node in ast.walk(tree) if isinstance(node, ast.Try)
                   for statement in node.body for child in ast.walk(statement)}
+        # Older stable sources load DirectML only when the caller selects it.
+        directml = {id(child) for node in ast.walk(tree)
+                    if isinstance(node, ast.If) and ast.unparse(node.test) == "args.directml is not None"
+                    for statement in node.body for child in ast.walk(statement)}
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 names = [alias.name for alias in node.names]
@@ -55,7 +59,7 @@ def check(root):
                 if module in sys.stdlib_module_names or module in {"comfy", "dinkster_inference", "node_helpers"}:
                     continue
                 distribution = DISTRIBUTIONS.get(module, module.lower().replace("_", "-"))
-                if id(node) in probes or module in OPTIONAL_IMPORTS:
+                if id(node) in probes or module in OPTIONAL_IMPORTS or (module == "torch_directml" and id(node) in directml):
                     probed.add(distribution)
                 else:
                     imports.setdefault(distribution, f"{path.relative_to(root)}:{node.lineno}")

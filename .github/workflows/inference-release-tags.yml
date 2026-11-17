@@ -19,6 +19,8 @@ jobs:
   tag:
     if: github.repository == 'Kosinkadink/dinkster-inference' && (github.event_name == 'schedule' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
       REPOSITORY: ${{ github.repository }}
@@ -58,9 +60,13 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "current=true" >> "$GITHUB_OUTPUT"
       - name: Create immutable source tags
+        id: tags
         if: steps.source.outputs.current == 'true'
+        env:
+          REPOSITORY_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          echo '[]' > "$RUNNER_TEMP/inference-main-release.json"
           python tools/inference_release.py plan --source "$SOURCE" > /tmp/inference-releases.json
           while IFS= read -r release; do
             version=$(jq -r .version <<< "$release")
@@ -79,6 +85,20 @@ jobs:
             fi
             jq -n --arg tag "v$version" --arg message "$release" --arg object "$commit" \
               '{tag: $tag, message: $message, object: $object, type: "commit"}' > /tmp/inference-tag.json
-            object=$(gh api --method POST "repos/$REPOSITORY/git/tags" --input /tmp/inference-tag.json --jq .sha)
-            gh api --method POST "repos/$REPOSITORY/git/refs" -f "ref=refs/tags/v$version" -f "sha=$object"
+            if [ "$(jq -r '.releaseSource // empty' <<< "$release")" = synced-main ]; then
+              # Suppress the historical tag's old workflow; current release.yml consumes this manifest.
+              object=$(GH_TOKEN="$REPOSITORY_TOKEN" gh api --method POST "repos/$REPOSITORY/git/tags" --input /tmp/inference-tag.json --jq .sha)
+              GH_TOKEN="$REPOSITORY_TOKEN" gh api --method POST "repos/$REPOSITORY/git/refs" -f "ref=refs/tags/v$version" -f "sha=$object"
+              jq -s '.' <<< "$release" > "$RUNNER_TEMP/inference-main-release.json"
+              echo "historical=true" >> "$GITHUB_OUTPUT"
+            else
+              object=$(gh api --method POST "repos/$REPOSITORY/git/tags" --input /tmp/inference-tag.json --jq .sha)
+              gh api --method POST "repos/$REPOSITORY/git/refs" -f "ref=refs/tags/v$version" -f "sha=$object"
+            fi
           done < <(jq -c '.[]' /tmp/inference-releases.json)
+      - uses: actions/upload-artifact@v4
+        if: steps.tags.outputs.historical == 'true'
+        with:
+          name: stable-main-release
+          path: ${{ runner.temp }}/inference-main-release.json
+          if-no-files-found: error
