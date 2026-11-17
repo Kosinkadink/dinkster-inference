@@ -1,7 +1,7 @@
 # Upstream sync provenance
 
 Upstream fork point: `comfyanonymous/ComfyUI` commit
-`5071348042489b20e1a9b64cc178357df67ad08b`.
+`db619053e7e24eb36bd4f81ffd46b5cc90144a12`.
 
 The sync and release tools read this exact upstream identity.
 
