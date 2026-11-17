@@ -257,6 +257,8 @@ jobs:
           path.write_text(updated)
           PY
           git add -A
+          python3 tools/check_library_files.py --activate-pending
+          git add tools/library_files.txt
           python3 tools/check_library_files.py
           tree=$(git write-tree)
           commit=$(printf 'Sync ComfyUI upstream through %s\n' "${target:0:8}" | git commit-tree "$tree" -p "$base" -p "$target")
