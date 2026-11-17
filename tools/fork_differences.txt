@@ -1,0 +1,14 @@
+# Upstream files this fork changes. Every entry is merged by hand whenever upstream changes
+# the same lines, so keep the list short. CI rejects a changed upstream file that is not here.
+
+# A failed host-buffer allocation must not leave a registered pinned buffer behind.
+dinkster_inference/model_management.py
+# Safetensors files are recognized by their header when the file name has another extension.
+dinkster_inference/utils.py
+# Fork edits inside upstream tests.
+tests-unit/comfy_quant/test_mixed_precision.py
+tests-unit/comfy_test/gemma4_template_test.py
+tests-unit/comfy_test/model_detection_test.py
+tests-unit/comfy_test/qwen35_decode_test.py
+tests-unit/comfy_test/test_minimax_h3_vae.py
+tests-unit/comfy_test/test_seedvr2_internals.py

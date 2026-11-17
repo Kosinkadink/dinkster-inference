@@ -4,10 +4,11 @@ import argparse
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CLASSES = {"library", "packaging", "tooling", "tests", "LICENSE"}
+CLASSES = {"library", "packaging", "tooling", "tests", "documentation", "LICENSE"}
 
 
 def check(root):
@@ -23,6 +24,16 @@ def check(root):
     ).rstrip("\0").split("\0"))
     errors.extend(f"Unclassified repository file: {path}" for path in sorted(tracked - inventory.keys()))
     errors.extend(f"Classified file is not tracked: {path}" for path in sorted(inventory.keys() - tracked))
+    project = root / "pyproject.toml"
+    globs = tomllib.loads(project.read_text()).get("tool", {}).get("setuptools", {}).get(
+        "package-data", {}).get("dinkster_inference") if project.exists() else None
+    if globs:
+        # A data file the wheel would not ship is application material or a packaging gap.
+        shipped = {".py"} | {Path(pattern).suffix for pattern in globs}
+        errors.extend(
+            f"File type is not packaged: {path}" for path in sorted(tracked)
+            if path.startswith("dinkster_inference/") and Path(path).suffix not in shipped
+        )
     return errors
 
 

@@ -7,12 +7,9 @@ import sys
 import tomllib
 
 
-# These backends are probed with a working fallback, not required by the library.
-OPTIONAL_IMPORTS = {
-    "cv2",  # SAM3 uses scipy.ndimage when OpenCV is absent.
-    "cublas_ops", "flash_attn", "sageattention", "sageattn3", "xformers",
-    "torch_mlu", "torch_npu", "triton",
-}
+# An import inside a `try` body is a backend probe with a fallback, not a requirement.
+# xformers is also imported behind the availability flag its probe sets.
+OPTIONAL_IMPORTS = {"xformers"}
 DISTRIBUTIONS = {"PIL": "pillow", "yaml": "pyyaml"}
 
 
@@ -23,6 +20,7 @@ def check(root):
         for requirement in project["dependencies"]
     }
     imports = {}
+    probed = set()
     for path in sorted(root.glob("dinkster_inference/**/*.py")) + [root / "node_helpers.py"]:
         tree = ast.parse(path.read_text(), filename=str(path))
         dynamic_imports = {"importlib.import_module", "__import__"}
@@ -36,6 +34,8 @@ def check(root):
                 dynamic_imports.update(
                     alias.asname or alias.name for alias in node.names if alias.name == "import_module"
                 )
+        probes = {id(child) for node in ast.walk(tree) if isinstance(node, ast.Try)
+                  for statement in node.body for child in ast.walk(statement)}
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 names = [alias.name for alias in node.names]
@@ -54,11 +54,13 @@ def check(root):
                 module = name.split(".")[0]
                 if module in sys.stdlib_module_names or module in {"comfy", "dinkster_inference", "node_helpers"}:
                     continue
-                if module not in OPTIONAL_IMPORTS:
-                    distribution = DISTRIBUTIONS.get(module, module.lower().replace("_", "-"))
+                distribution = DISTRIBUTIONS.get(module, module.lower().replace("_", "-"))
+                if id(node) in probes or module in OPTIONAL_IMPORTS:
+                    probed.add(distribution)
+                else:
                     imports.setdefault(distribution, f"{path.relative_to(root)}:{node.lineno}")
     errors = [f"Undeclared dependency {name}: {imports[name]}" for name in sorted(imports.keys() - declared)]
-    errors += [f"Unused dependency {name}" for name in sorted(declared - imports.keys())]
+    errors += [f"Unused dependency {name}" for name in sorted(declared - imports.keys() - probed)]
     return errors
 
 

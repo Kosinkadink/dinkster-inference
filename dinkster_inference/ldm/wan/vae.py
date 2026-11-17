@@ -164,7 +164,7 @@ class ResidualBlock(nn.Module):
             CausalConv3d(in_dim, out_dim, 3, padding=1),
             RMS_norm(out_dim, images=False), nn.SiLU(), nn.Dropout(dropout),
             CausalConv3d(out_dim, out_dim, 3, padding=1))
-        self.shortcut = CausalConv3d(in_dim, out_dim, 1)\
+        self.shortcut = CausalConv3d(in_dim, out_dim, 1) \
             if in_dim != out_dim else nn.Identity()
 
     def forward(self, x, feat_cache=None, feat_idx=[0], final=False):

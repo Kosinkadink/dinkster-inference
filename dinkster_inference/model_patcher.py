@@ -1757,7 +1757,7 @@ class ModelPatcher:
             except:
                 output_state_dict[k] = v
                 continue
-            if not op or not hasattr(op, "comfy_cast_weights") or\
+            if not op or not hasattr(op, "comfy_cast_weights") or \
                 (hasattr(op, "comfy_patched_weights") and op.comfy_patched_weights == True):
                 output_state_dict[k] = v
                 continue

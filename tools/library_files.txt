@@ -387,6 +387,7 @@ library dinkster_inference/weight_adapter/lokr.py
 library dinkster_inference/weight_adapter/lora.py
 library dinkster_inference/weight_adapter/oft.py
 tooling docs/ledger.md
+documentation docs/quantization.md
 library node_helpers.py
 packaging pyproject.toml
 tests pytest.ini
@@ -427,6 +428,7 @@ tooling tools/check_dependencies.py
 tooling tools/check_library_files.py
 tooling tools/check_upstream_parity.py
 tooling tools/compare_workflows.py
+tooling tools/fork_differences.txt
 tooling tools/inference_release.py
 tooling tools/library_files.txt
 tooling tools/regenerate_upstream_library.py

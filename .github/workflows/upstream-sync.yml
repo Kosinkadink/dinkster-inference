@@ -128,6 +128,15 @@ jobs:
           PY
           }
 
+          # A regenerated sync is the only commit on the branch, and its second parent is the
+          # upstream commit it carries. An owner's resolution adds commits of its own.
+          regenerated_sync() {
+            [ "$(git rev-list --count --first-parent origin/main..origin/upstream-sync)" = 1 ] || return 1
+            git show -s --format=%s origin/upstream-sync | grep -Eqx 'Sync ComfyUI upstream through [0-9a-f]{8}' || return 1
+            git rev-parse --verify --quiet origin/upstream-sync^2 >/dev/null || return 1
+            git merge-base --is-ancestor origin/upstream-sync^2 upstream/master
+          }
+
           existing_pr=$(gh pr list --repo "$REPOSITORY" --state open --head upstream-sync --json number --jq '.[0].number // empty')
           expected_head=
           if git ls-remote --exit-code --heads origin upstream-sync >/dev/null; then
@@ -161,7 +170,14 @@ jobs:
                 # Replace the old raw-tree conflict marker with a transformed sync.
                 # It carries no owner resolution and is safe to regenerate.
                 :
+              elif regenerated_sync && [ "$(git rev-parse origin/upstream-sync^1)" != "$(git rev-parse origin/main)" ]; then
+                # Main moved under this workflow's own sync; regenerate it on current main.
+                :
               else
+                if regenerated_sync; then
+                  # Resume the checks and merge of the sync an earlier run pushed.
+                  echo "automated_head=$head" >> "$GITHUB_OUTPUT"
+                fi
                 echo "conflict=false" >> "$GITHUB_OUTPUT"
                 guarded=$(write_guarded_paths origin/upstream-sync)
                 {
@@ -172,12 +188,14 @@ jobs:
                 exit 0
               fi
             fi
-            owner_commits=$(python3 - "$existing_pr" <<'PY'
+            own_sync=false
+            if regenerated_sync; then own_sync=true; fi
+            owner_commits=$(python3 - "$existing_pr" "$own_sync" <<'PY'
           import re
           import subprocess
           import sys
 
-          if not sys.argv[1]:
+          if not sys.argv[1] or sys.argv[2] == "true":
               raise SystemExit(0)
           branch_tree = subprocess.check_output(
               ["git", "rev-parse", "origin/upstream-sync^{tree}"], text=True
@@ -232,8 +250,9 @@ jobs:
           trap cleanup EXIT
           git worktree add --detach "$baseline_checkout" "$recorded"
           git worktree add --detach "$target_checkout" "$target"
+          upstream_files=$(mktemp)
           if ! python3 tools/regenerate_upstream_library.py \
-            --baseline "$baseline_checkout" --upstream "$target_checkout" --destination .; then
+            --baseline "$baseline_checkout" --upstream "$target_checkout" --destination . > "$upstream_files"; then
             git reset --hard "$base"
             echo "::error::The transformed library delta could not carry a fork change."
             exit 1
@@ -264,6 +283,11 @@ jobs:
           python3 tools/check_upstream_parity.py \
             --baseline "$baseline_checkout" --upstream "$target_checkout" --destination .
           git push --force-with-lease="refs/heads/upstream-sync:$expected_head" origin HEAD:upstream-sync
+          {
+            echo "files<<EOF"
+            cat "$upstream_files"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
           head=$(git rev-parse HEAD)
           echo "head=$head" >> "$GITHUB_OUTPUT"
           echo "automated_head=$head" >> "$GITHUB_OUTPUT"
@@ -284,6 +308,7 @@ jobs:
           CONFLICT: ${{ steps.upstream.outputs.conflict }}
           CONFLICTS: ${{ steps.upstream.outputs.conflicts }}
           GUARDED: ${{ steps.upstream.outputs.guarded }}
+          FILES: ${{ steps.upstream.outputs.files }}
         run: |
           set -euo pipefail
           pr=$(gh pr list --repo "$REPOSITORY" --state open --head upstream-sync --json number --jq '.[0].number // empty')
@@ -311,6 +336,16 @@ jobs:
               echo
               printf '%s\n' "$COMMITS"
               echo
+              if [ -n "${FILES:-}" ]; then
+                echo "## Files upstream added (+) or removed (-)"
+                echo
+                echo "\`tools/library_files.txt\` is updated to match in this commit."
+                echo
+                echo '```'
+                printf '%s\n' "$FILES"
+                echo '```'
+                echo
+              fi
               if [ -n "$GUARDED" ]; then
                 echo "## Guarded paths changed"
                 echo
@@ -395,80 +430,3 @@ jobs:
             exit 1
           fi
           gh pr merge "$PR_NUMBER" --repo "$REPOSITORY" --squash --match-head-commit "$EXPECTED_HEAD"
-
-      - name: Check dependency releases
-        run: |
-          set -euo pipefail
-          git switch --detach origin/main
-          for package in comfy-kitchen comfy-aimdo; do
-            current=$(python3 - "$package" <<'PY'
-          import re
-          import sys
-          from pathlib import Path
-
-          package = sys.argv[1]
-          match = re.search(rf'\b{re.escape(package)}==([^"\s,]+)', Path("pyproject.toml").read_text())
-          if match is None:
-              raise SystemExit(f"pyproject.toml does not pin {package}")
-          print(match.group(1))
-          PY
-            )
-            latest=$(curl --fail --silent --show-error "https://pypi.org/pypi/${package}/json" | jq -r .info.version)
-            newest=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)
-            if [ "$latest" = "$current" ] || [ "$newest" != "$latest" ]; then
-              echo "$package is current at $current"
-              continue
-            fi
-            echo "$package has a newer release: $current -> $latest"
-            if [ "$DRY_RUN" = "true" ]; then
-              continue
-            fi
-
-            branch="upstream-sync-${package}"
-            pr=$(gh pr list --repo "$REPOSITORY" --state open --head "$branch" --json number,title --jq '.[0] // empty')
-            if [ -n "$pr" ] && [ "$(jq -r .title <<< "$pr")" = "Bump ${package} to ${latest}" ]; then
-              echo "An open ${package} ${latest} pull request already exists."
-              continue
-            fi
-            git switch --force-create "$branch" origin/main
-            python3 - "$package" "$latest" <<'PY'
-          import re
-          import sys
-          from pathlib import Path
-
-          package, version = sys.argv[1:]
-          path = Path("pyproject.toml")
-          updated, count = re.subn(
-              rf'(\b{re.escape(package)}==)[^"\s,]+',
-              rf'\g<1>{version}',
-              path.read_text(),
-          )
-          if count != 1:
-              raise SystemExit(f"expected one {package} pin in pyproject.toml, found {count}")
-          path.write_text(updated)
-          PY
-            git add pyproject.toml
-            git commit -m "Bump ${package} to ${latest}"
-            if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
-              git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
-            fi
-            git push --force-with-lease origin "HEAD:${branch}"
-
-            pr=$(jq -r '.number // empty' <<< "$pr")
-            body=$(mktemp)
-            {
-              echo "Refs Kosinkadink/comfy-vibe-station#479"
-              echo
-              echo "Pin ${package} ${latest} in \`pyproject.toml\`."
-              echo
-              echo "Release: https://pypi.org/project/${package}/${latest}/"
-            } > "$body"
-            if [ -z "$pr" ]; then
-              gh pr create --repo "$REPOSITORY" --base main --head "$branch" --title "Bump ${package} to ${latest}" --body-file "$body"
-            else
-              gh pr edit "$pr" --repo "$REPOSITORY" --title "Bump ${package} to ${latest}" --body-file "$body"
-            fi
-            rm -f "$body"
-            pr=$(gh pr list --repo "$REPOSITORY" --state open --head "$branch" --json number --jq '.[0].number')
-            gh pr edit "$pr" --repo "$REPOSITORY" --add-label upstream-sync
-          done

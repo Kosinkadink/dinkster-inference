@@ -209,7 +209,7 @@ class TransformerBlock(nn.Module):
         self.rope = RotaryEmbedding(dim_heads // 2, dtype=dtype, device=device) if add_rope else None
 
     def forward(self, x, mask=None, **kwargs):
-        rope = self.rope.forward_from_seq_len(x.shape[-2], device=x.device)\
+        rope = self.rope.forward_from_seq_len(x.shape[-2], device=x.device) \
                if self.rope is not None else None
         x = x + self.self_attn(self.pre_norm(x), rotary_pos_emb=rope, mask=mask)
         x = x + self.ff(self.ff_norm(x))
@@ -425,7 +425,7 @@ class SoftNormBottleneck(nn.Module):
                 p.requires_grad = False
 
     def encode(self, x, return_info=False, **kwargs):
-        x = x * dinkster_inference.ops.cast_to_input(self.scaling_factor, x)\
+        x = x * dinkster_inference.ops.cast_to_input(self.scaling_factor, x) \
               + dinkster_inference.ops.cast_to_input(self.bias, x)
         if hasattr(self, "running_std"):
             x = x / dinkster_inference.ops.cast_to_input(self.running_std, x)
@@ -437,7 +437,7 @@ class SoftNormBottleneck(nn.Module):
         if hasattr(self, "running_std"):
             x = x * dinkster_inference.ops.cast_to_input(self.running_std, x)
         if self.noise_regularize:
-            scaling = self.running_std if hasattr(self, "running_std")\
+            scaling = self.running_std if hasattr(self, "running_std") \
                       else x.std(dim=-1, keepdim=True)
             noise = torch.randn_like(x) * dinkster_inference.ops.cast_to_input(scaling, x) * 1e-3
             x = x + noise

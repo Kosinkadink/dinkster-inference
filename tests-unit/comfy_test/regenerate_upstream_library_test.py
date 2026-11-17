@@ -1,10 +1,4 @@
-from pathlib import Path
-
-from tools.regenerate_upstream_library import OMITTED_TESTS, regenerate
-
-
-def test_seedvr2_internal_test_is_retained_whole():
-    assert "test_seedvr2_internals.py" not in OMITTED_TESTS
+from tools.regenerate_upstream_library import regenerate
 
 
 def test_regenerate_carries_fork_changes_and_rewrites_upstream_scope(tmp_path):
@@ -22,7 +16,9 @@ def test_regenerate_carries_fork_changes_and_rewrites_upstream_scope(tmp_path):
         (baseline / "tests-unit" / name / "upstream_test.py").write_text("import comfy\n")
         (upstream / "tests-unit" / name).mkdir(parents=True)
         (upstream / "tests-unit" / name / "upstream_test.py").write_text("import comfy\n")
-    (upstream / "tests-unit" / "comfy_test" / "test_seedvr2_model.py").write_text("import comfy\n")
+    (upstream / "nodes.py").write_text("application = True\n")
+    (upstream / "tests-unit" / "comfy_test" / "test_seedvr2_model.py").write_text("import comfy\nimport nodes\n")
+    (upstream / "tests-unit" / "comfy_test" / "new_library_test.py").write_text("import comfy.library\n")
     (baseline / "node_helpers.py").write_text("import comfy\n")
     (upstream / "node_helpers.py").write_text("import comfy\n")
     (destination / "tests-unit" / "comfy_test").mkdir(parents=True)
@@ -50,6 +46,7 @@ def test_regenerate_carries_fork_changes_and_rewrites_upstream_scope(tmp_path):
     assert (destination / "dinkster_inference" / "mediapipe" / "face.py").read_text() == "from dinkster_inference import sd\n"
     assert (destination / "tests-unit" / "comfy_test" / "upstream_test.py").read_text() == "import dinkster_inference\n"
     assert not (destination / "tests-unit" / "comfy_test" / "test_seedvr2_model.py").exists()
+    assert (destination / "tests-unit/comfy_test/new_library_test.py").read_text() == "import dinkster_inference.library\n"
     assert (destination / "tests-unit" / "comfy_test" / "upstream_sync_test.py").read_text() == "fixture = 'fork'\n"
     assert (destination / "node_helpers.py").read_text() == "import dinkster_inference\n"
     assert (destination / "application.py").read_text() == "keep = True\n"
