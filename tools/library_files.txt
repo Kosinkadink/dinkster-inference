@@ -3,6 +3,7 @@ tooling .github/workflows/inference-release-tags.yml
 tooling .github/workflows/release.yml
 tooling .github/workflows/upstream-sync.yml
 packaging .gitignore
+documentation AGENTS.md
 LICENSE LICENSE
 packaging README.md
 tooling UPSTREAM_SYNC_GUARDED_PATHS

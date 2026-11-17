@@ -4,6 +4,8 @@ Dinkster's inference library provides model loading, sampling, conditioning,
 text/image/audio encoders, device management and inference runtime resources.
 The `comfy` import name aliases `dinkster_inference` modules without duplicating
 model-management state. The distribution does not include an application.
+A module this library does not provide still resolves from a ComfyUI checkout's
+`comfy/` directory on `sys.path`; library modules always take precedence.
 
 ```bash
 python -m pip install .
@@ -33,31 +35,41 @@ python -m pytest -q tests-unit
 python -m build
 ```
 
-`tools/library_files.txt` classifies every tracked file as library code/runtime
-data, packaging, release/upstream/dependency tooling, tests or LICENSE. Classify
-new files there only when they serve one of those purposes. CI rejects missing
-or unclassified entries. Packaging includes only Python modules and runtime
-JSON, tokenizer model and text resources.
+The library is generated from ComfyUI; [AGENTS.md](AGENTS.md) has the rules for
+changing it and [docs/quantization.md](docs/quantization.md) specifies the
+quantized checkpoint format. The [sync ledger](docs/ledger.md) records the
+upstream commit and what the transform keeps.
 
-The [sync ledger](docs/ledger.md) supplies the upstream fork point.
 `tools/regenerate_upstream_library.py --baseline /path/to/recorded-upstream
 --upstream /path/to/new-upstream --destination .` transforms both revisions and
-merges their library delta while preserving fork changes. Node-authoring
-examples and node types are excluded. `tools/check_upstream_parity.py` accepts
-the same arguments and verifies that the transformed delta is already present.
-The sync workflow checks the classified inventory before pushing; previously
-unseen upstream files require classification before they can land.
+merges their difference into this tree, keeping fork changes.
+`tools/check_upstream_parity.py` takes the same arguments and verifies that the
+difference is present. With `--differences --upstream /path/to/recorded-upstream`
+it lists every file that differs from upstream; CI runs that check with
+`--declared tools/fork_differences.txt` and rejects a changed upstream file
+that is not declared there.
 
-`tools/compare_workflows.py --help` describes the isolated installed-wheel
-comparison harness. It uses caller-supplied local models and a reference
-checkout; it does not download model artifacts.
+`tools/library_files.txt` lists every tracked file. The scheduled sync adds and
+removes the entries of files that upstream added or removed and names them in
+its pull request. Any other new file needs an entry in the pull request that
+adds it. Packaging includes only Python modules and runtime JSON, tokenizer
+model and text resources.
+
+`tools/compare_workflows.py` compares the installed wheel against a clean
+ComfyUI checkout at the ledger's commit, in separate processes with the same
+interpreter, models, seed and deterministic settings. `--help` lists its
+inputs. It downloads nothing; a missing model file, a worker error or a
+non-finite value is a failure, and the exit status is zero only when every
+selected case is identical. `comparison.json` in the output directory records
+input hashes, package provenance and per-case differences.
 
 ## Releases
 
 Consumers pin exact versions and PyPI wheel hashes. After a landed upstream
 sync passes main CI, automation publishes an immutable `vX.Y.Z.devN` release.
 `X.Y.Z` is the next patch after the latest stable inference release; `N` is the
-source commit count. An hourly check detects newly contained upstream stable
+source commit count. Tags are kept even when a package is removed from PyPI,
+so a version is never reused. An hourly check detects newly contained upstream stable
 tags and publishes separate stable inference patch releases. Superseded CI
 completions do not publish; the next successful current-main check recovers
 unpublished syncs in source order.
@@ -69,5 +81,5 @@ identity. Development/prerelease publication is wheel-only; stable releases
 also include source distributions. Failed publication never moves a tag.
 
 Trusted PyPI publication uses repository `Kosinkadink/dinkster-inference`,
-workflow `release.yml`, environment `pypi`. Branches and pull requests build
-without publishing. Source licensing is GPL-3.0; see [LICENSE](LICENSE).
+workflow `release.yml`, environment `pypi`; no PyPI token is stored. Branches
+and pull requests build without publishing. Source licensing is GPL-3.0; see [LICENSE](LICENSE).
