@@ -430,6 +430,7 @@ tests tests-unit/library_files_test.py
 tests tests-unit/release_test.py
 tests tests-unit/requirements.txt
 tests tests-unit/workflow_comparison_test.py
+tooling tools/adapted_upstream_tests.json
 tooling tools/check_dependencies.py
 tooling tools/check_library_files.py
 tooling tools/check_upstream_parity.py

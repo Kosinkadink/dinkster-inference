@@ -10,9 +10,9 @@ import tomllib
 from pathlib import Path
 
 if __package__:
-    from tools.regenerate_upstream_library import MAPPED_FILES, MAPPED_ROOTS, regenerate
+    from tools.regenerate_upstream_library import MAPPED_FILES, MAPPED_ROOTS, regenerate, update_inventory
 else:
-    from regenerate_upstream_library import MAPPED_FILES, MAPPED_ROOTS, regenerate
+    from regenerate_upstream_library import MAPPED_FILES, MAPPED_ROOTS, regenerate, update_inventory
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,16 +48,19 @@ def library_identity(commit):
 
 def stable_source(source, baseline, tag, upstream, version):
     branch = f"release/upstream-{tag}"
-    existing = git("for-each-ref", f"refs/remotes/origin/{branch}", f"refs/heads/{branch}",
-                   "--format=%(objectname)").splitlines()
+    adapted = json.loads(git("show", f"{source}:tools/adapted_upstream_tests.json"))
+    local = git("for-each-ref", f"refs/heads/{branch}", "--format=%(objectname)")
+    remote = git("for-each-ref", f"refs/remotes/origin/{branch}", "--format=%(objectname)")
+    existing = local if local and remote and contains(local, remote) else remote or local
     if existing:
-        commit = existing[0]
+        commit = existing
         identity = json.loads(git("show", "-s", "--format=%B", commit).split("\n\n", 1)[1])
         if (identity["upstreamTag"] != tag or identity["upstreamTagCommit"] != upstream
                 or identity["version"] != version or not contains(source, identity["mainSourceCommit"])
                 or upstream_at(commit) != upstream):
             raise ValueError(f"Release branch does not match stable source: {branch}")
-        return {**identity, "sourceCommit": commit, "upstreamCommit": upstream, "branch": branch}
+        if identity.get("adaptedTestSources") == adapted:
+            return {**identity, "sourceCommit": commit, "upstreamCommit": upstream, "branch": branch}
 
     recorded = upstream_at(source)
     merge_base = git("merge-base", recorded, upstream)
@@ -68,6 +71,7 @@ def stable_source(source, baseline, tag, upstream, version):
         "upstreamMergeBase": merge_base,
         "mainSourceCommit": source,
         "releaseSource": "upstream-tag-branch",
+        "adaptedTestSources": adapted,
     }
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)
@@ -83,6 +87,12 @@ def stable_source(source, baseline, tag, upstream, version):
             # Both passes preserve fork changes with the sync's same three-way rules.
             regenerate(recorded_tree, base_tree, fork)
             regenerate(base_tree, tag_tree, fork)
+            excluded = {path: original for path, original in adapted.items()
+                        if not (tag_tree / original).is_file()}
+            for path in excluded:
+                (fork / path).unlink(missing_ok=True)
+            update_inventory(fork, [], list(excluded))
+            identity["excludedAdaptedTests"] = excluded
             ledger = fork / "docs/ledger.md"
             updated, count = re.subn(
                 r"(Upstream fork point:.*?`)[0-9a-f]{40}(`)",
@@ -102,8 +112,11 @@ def stable_source(source, baseline, tag, upstream, version):
                     return {**identity, "releaseSource": "synced-main", "sourceCommit": main,
                             "upstreamCommit": upstream_at(main)}
             message = f"Prepare inference stable source for {tag}\n\n{json.dumps(identity, sort_keys=True)}\n"
+            parents = ["-p", source, "-p", upstream]
+            if existing:
+                parents += ["-p", existing]
             commit = subprocess.check_output(
-                ["git", "commit-tree", tree, "-p", source, "-p", upstream], input=message, text=True,
+                ["git", "commit-tree", tree, *parents], input=message, text=True,
             ).strip()
             git("-C", str(fork), "reset", "--hard", commit)
             subprocess.run(
@@ -116,7 +129,7 @@ def stable_source(source, baseline, tag, upstream, version):
                  "--declared", str(fork / "tools/fork_differences.txt"),
                  "--upstream", str(tag_tree), "--destination", str(fork)], check=True, stdout=sys.stderr,
             )
-            git("update-ref", f"refs/heads/{branch}", commit, "0" * 40)
+            git("update-ref", f"refs/heads/{branch}", commit, local or "0" * 40)
             return {**identity, "sourceCommit": commit, "upstreamCommit": upstream, "branch": branch}
         finally:
             for path in reversed(checkouts):
