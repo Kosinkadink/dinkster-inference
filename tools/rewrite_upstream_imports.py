@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 REWRITES = (
+    # Protocol is in the standard library on every supported Python version.
+    (re.compile(r"(?m)^([ \t]*)from typing_extensions import Protocol$"), r"\1from typing import Protocol"),
     (re.compile(r"\bcomfy_extras\.mediapipe\b"), "dinkster_inference.mediapipe"),
     (re.compile(r"\bcomfy\.(?!gguf\.orig_shape\.)"), "dinkster_inference."),
     (re.compile(r"\bfrom comfy\b"), "from dinkster_inference"),

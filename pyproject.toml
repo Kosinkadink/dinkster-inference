@@ -26,7 +26,6 @@ dependencies = [
   "psutil",
   "comfy-kitchen==0.2.41",
   "comfy-aimdo==0.6.0",
-  "typing-extensions",
   "trimesh",
 ]
 
