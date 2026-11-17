@@ -1,3 +1,5 @@
+import tomllib
+
 from tools.regenerate_upstream_library import regenerate
 
 
@@ -37,8 +39,18 @@ def test_regenerate_carries_fork_changes_and_rewrites_upstream_scope(tmp_path):
         (examples / "example_nodes.py").write_text(f"application = {str(root)!r}\n")
         (examples.parent / "README.md").write_text(str(root))
         (examples.parent / "node_typing.py").write_text(f"application = {str(root)!r}\n")
+    (baseline / "requirements.txt").write_text("numpy>=1.25\ntyping-extensions\n")
+    (upstream / "requirements.txt").write_text("numpy>=1.26\ntyping-extensions\naiohttp>=3.11\n")
+    (destination / "pyproject.toml").write_text('[project]\ndependencies = [\n"numpy>=1.25",\n]\n')
+    (upstream / "comfy/protocol.py").write_text(
+        "from typing_extensions import Protocol\nfrom typing_extensions import TypeIs\n"
+    )
     regenerate(baseline, upstream, destination)
 
+    assert tomllib.loads((destination / "pyproject.toml").read_text())["project"]["dependencies"] == ["numpy>=1.26"]
+    assert (destination / "dinkster_inference/protocol.py").read_text() == (
+        "from typing import Protocol\nfrom typing_extensions import TypeIs\n"
+    )
     assert not (destination / "dinkster_inference/comfy_types").exists()
     assert (destination / "dinkster_inference" / "library.py").read_text() == (
         "fork_only = True\nimport dinkster_inference\nvalue = 'base'\nupstream = True\n"
