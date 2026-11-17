@@ -200,6 +200,7 @@ library dinkster_inference/ldm/moge/modules.py
 library dinkster_inference/ldm/moge/panorama.py
 library dinkster_inference/ldm/moss_image/model.py
 library dinkster_inference/ldm/omnigen/omnigen2.py
+library dinkster_inference/ldm/pan2/model.py
 library dinkster_inference/ldm/pixart/blocks.py
 library dinkster_inference/ldm/pixart/pixartms.py
 library dinkster_inference/ldm/pixeldit/model.py
@@ -341,6 +342,7 @@ library dinkster_inference/text_encoders/mt5_config_xl.json
 library dinkster_inference/text_encoders/newbie.py
 library dinkster_inference/text_encoders/omnigen2.py
 library dinkster_inference/text_encoders/ovis.py
+library dinkster_inference/text_encoders/pan2.py
 library dinkster_inference/text_encoders/pixart_t5.py
 library dinkster_inference/text_encoders/pixeldit.py
 library dinkster_inference/text_encoders/qwen25_tokenizer/merges.txt
@@ -415,6 +417,7 @@ tests tests-unit/comfy_test/test_ltx_diffusion_vae_dtype.py
 tests tests-unit/comfy_test/test_minimax_h3_model.py
 tests tests-unit/comfy_test/test_minimax_h3_vae.py
 tests tests-unit/comfy_test/test_minimax_text_encoder.py
+tests tests-unit/comfy_test/test_model_patcher_dynamic_buffer_restore.py
 tests tests-unit/comfy_test/test_seedvr2_dtype.py
 tests tests-unit/comfy_test/test_seedvr2_internals.py
 tests tests-unit/comfy_test/test_seedvr2_vae_tiled.py
