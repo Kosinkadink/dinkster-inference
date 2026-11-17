@@ -36,6 +36,7 @@ import math
 import os
 
 import dinkster_inference.utils
+import dinkster_inference.checkpoint_convert
 import dinkster_inference.ops
 import dinkster_inference.model_prefetch
 import dinkster_inference.storage
@@ -47,6 +48,7 @@ from . import model_detection
 
 from . import sd1_clip
 from . import sdxl_clip
+import dinkster_inference.text_encoders.sensenova
 import dinkster_inference.text_encoders.sd2_clip
 import dinkster_inference.text_encoders.sd3_clip
 import dinkster_inference.text_encoders.sa_t5
@@ -1928,6 +1930,10 @@ def load_text_encoder_state_dicts(state_dicts=[], embedding_directory=None, clip
             clip_target.params["projection_config"] = dinkster_inference.text_encoders.minimax_music.detect_merged_config(clip_data[0])
             clip_target.clip = dinkster_inference.text_encoders.minimax_music.MiniMaxMusic3TEModel
             clip_target.tokenizer = dinkster_inference.text_encoders.minimax_music.MiniMaxMusic3Tokenizer
+        elif "language_model.model.embed_tokens.weight" in clip_data[0] and "language_model.model.norm.weight" in clip_data[0] and "language_model.model.layers.0.self_attn.q_norm_hw.weight" in clip_data[0]:
+            clip_target.clip = dinkster_inference.text_encoders.sensenova.SenseNovaTextEncoder
+            clip_target.tokenizer = dinkster_inference.text_encoders.sensenova.SenseNovaTokenizer
+            clip_target.params = dinkster_inference.text_encoders.sensenova.clip_parameters(clip_data[0])
         elif te_model == TEModel.CLIP_G:
             if clip_type == CLIPType.STABLE_CASCADE:
                 clip_target.clip = sdxl_clip.StableCascadeClipModel
@@ -2303,6 +2309,7 @@ def load_checkpoint(config_path=None, ckpt_path=None, output_vae=True, output_cl
 
 def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, output_clipvision=False, embedding_directory=None, output_model=True, model_options={}, te_model_options={}, disable_dynamic=False):
     sd, metadata = dinkster_inference.utils.load_torch_file(ckpt_path, return_metadata=True)
+    sd = dinkster_inference.checkpoint_convert.convert_checkpoint(sd)
     out = load_state_dict_guess_config(sd, output_vae, output_clip, output_clipvision, embedding_directory, output_model, model_options, te_model_options=te_model_options, metadata=metadata, disable_dynamic=disable_dynamic)
     if out is None:
         raise RuntimeError("ERROR: Could not detect model type of: {}\n{}".format(ckpt_path, model_detection_error_hint(ckpt_path, sd)))
