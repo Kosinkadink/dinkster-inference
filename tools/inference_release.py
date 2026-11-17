@@ -4,7 +4,19 @@ import argparse
 import json
 import re
 import subprocess
+import sys
+import tempfile
+import tomllib
 from pathlib import Path
+
+if __package__:
+    from tools.regenerate_upstream_library import MAPPED_FILES, MAPPED_ROOTS, regenerate
+else:
+    from regenerate_upstream_library import MAPPED_FILES, MAPPED_ROOTS, regenerate
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCOPE = tuple(target for _, target in MAPPED_ROOTS + MAPPED_FILES)
 
 
 def git(*arguments):
@@ -26,6 +38,89 @@ def contains(descendant, ancestor):
     if result.returncode not in (0, 1):
         raise ValueError("Cannot establish release ancestry")
     return result.returncode == 0
+
+
+def library_identity(commit):
+    files = git("ls-tree", "-r", commit, "--", *SCOPE)
+    dependencies = tomllib.loads(git("show", f"{commit}:pyproject.toml"))["project"]["dependencies"]
+    return files, sorted(dependencies)
+
+
+def stable_source(source, baseline, tag, upstream, version):
+    branch = f"release/upstream-{tag}"
+    existing = git("for-each-ref", f"refs/remotes/origin/{branch}", f"refs/heads/{branch}",
+                   "--format=%(objectname)").splitlines()
+    if existing:
+        commit = existing[0]
+        identity = json.loads(git("show", "-s", "--format=%B", commit).split("\n\n", 1)[1])
+        if (identity["upstreamTag"] != tag or identity["upstreamTagCommit"] != upstream
+                or identity["version"] != version or not contains(source, identity["mainSourceCommit"])
+                or upstream_at(commit) != upstream):
+            raise ValueError(f"Release branch does not match stable source: {branch}")
+        return {**identity, "sourceCommit": commit, "upstreamCommit": upstream, "branch": branch}
+
+    recorded = upstream_at(source)
+    merge_base = git("merge-base", recorded, upstream)
+    identity = {
+        "version": version,
+        "upstreamTag": tag,
+        "upstreamTagCommit": upstream,
+        "upstreamMergeBase": merge_base,
+        "mainSourceCommit": source,
+        "releaseSource": "upstream-tag-branch",
+    }
+    with tempfile.TemporaryDirectory() as directory:
+        directory = Path(directory)
+        checkouts = []
+        try:
+            for name, commit in (("fork", source), ("recorded", recorded),
+                                 ("base", merge_base), ("tag", upstream)):
+                path = directory / name
+                git("worktree", "add", "--detach", str(path), commit)
+                checkouts.append(path)
+            fork, recorded_tree, base_tree, tag_tree = checkouts
+            # Remove master-only upstream changes before applying the stable branch.
+            # Both passes preserve fork changes with the sync's same three-way rules.
+            regenerate(recorded_tree, base_tree, fork)
+            regenerate(base_tree, tag_tree, fork)
+            ledger = fork / "docs/ledger.md"
+            updated, count = re.subn(
+                r"(Upstream fork point:.*?`)[0-9a-f]{40}(`)",
+                rf"\g<1>{upstream}\2", ledger.read_text(), count=1, flags=re.DOTALL,
+            )
+            if count != 1:
+                raise ValueError("Cannot update stable source ledger")
+            ledger.write_text(updated)
+            git("-C", str(fork), "add", "-A")
+            for tool in ("check_library_files.py", "check_dependencies.py"):
+                subprocess.run([sys.executable, str(fork / "tools" / tool)], check=True, stdout=sys.stderr)
+            tree = git("-C", str(fork), "write-tree")
+            target_identity = library_identity(tree)
+            for main in [source] + git("rev-list", "--first-parent", f"{baseline}..{source}").splitlines() + [baseline]:
+                if library_identity(main) == target_identity:
+                    main = git("rev-parse", f"{main}^{{commit}}")
+                    return {**identity, "releaseSource": "synced-main", "sourceCommit": main,
+                            "upstreamCommit": upstream_at(main)}
+            message = f"Prepare inference stable source for {tag}\n\n{json.dumps(identity, sort_keys=True)}\n"
+            commit = subprocess.check_output(
+                ["git", "commit-tree", tree, "-p", source, "-p", upstream], input=message, text=True,
+            ).strip()
+            git("-C", str(fork), "reset", "--hard", commit)
+            subprocess.run(
+                [sys.executable, str(fork / "tools/check_upstream_parity.py"),
+                 "--baseline", str(base_tree), "--upstream", str(tag_tree), "--destination", str(fork)],
+                check=True, stdout=sys.stderr,
+            )
+            subprocess.run(
+                [sys.executable, str(fork / "tools/check_upstream_parity.py"), "--differences",
+                 "--declared", str(fork / "tools/fork_differences.txt"),
+                 "--upstream", str(tag_tree), "--destination", str(fork)], check=True, stdout=sys.stderr,
+            )
+            git("update-ref", f"refs/heads/{branch}", commit, "0" * 40)
+            return {**identity, "sourceCommit": commit, "upstreamCommit": upstream, "branch": branch}
+        finally:
+            for path in reversed(checkouts):
+                git("worktree", "remove", "--force", str(path))
 
 
 def release_plan(source):
@@ -88,21 +183,13 @@ def release_plan(source):
         match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag)
         if match and tag not in published_upstream:
             commit = git("rev-parse", f"{ref}^{{commit}}")
-            if contains(current_upstream, commit) and not contains(
-                previous_upstream, commit
-            ):
+            if not contains(previous_upstream, commit):
                 upstream_tags.append((tuple(map(int, match.groups())), tag, commit))
-    for offset, (_, tag, commit) in enumerate(sorted(upstream_tags), start=1):
-        version = f"{latest[0]}.{latest[1]}.{latest[2] + offset}"
-        releases.append(
-            {
-                "version": version,
-                "sourceCommit": source,
-                "upstreamCommit": current_upstream,
-                "upstreamTag": tag,
-                "upstreamTagCommit": commit,
-            }
-        )
+    # Publish in upstream version order so a pending branch keeps its reserved version.
+    if upstream_tags:
+        _, tag, commit = min(upstream_tags)
+        version = f"{latest[0]}.{latest[1]}.{latest[2] + 1}"
+        releases.append(stable_source(source, baseline, tag, commit, version))
     return releases
 
 
@@ -118,6 +205,15 @@ def prepare(version):
         "sourceCommit": source,
         "upstreamCommit": upstream_at(source),
     }
+    annotation = git("for-each-ref", f"refs/tags/v{version}", "--format=%(contents)")
+    try:
+        recorded = json.loads(annotation)
+    except json.JSONDecodeError:
+        recorded = {}
+    if recorded:
+        if not isinstance(recorded, dict) or any(recorded.get(key) != value for key, value in identity.items()):
+            raise ValueError("Release annotation does not match source identity")
+        identity = recorded
     project = Path("pyproject.toml")
     updated, count = re.subn(
         r'^version = "[^"]+"$',

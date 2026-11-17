@@ -4,7 +4,7 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    branches: [main]
+    branches: [main, 'release/upstream-v*']
   schedule:
     - cron: "41 * * * *"
 
@@ -22,11 +22,10 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
       REPOSITORY: ${{ github.repository }}
-      SOURCE: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.SOURCE }}
+          ref: main
           fetch-depth: 0
           token: ${{ secrets.RELEASE_BOT_TOKEN }}
       - uses: actions/setup-python@v5
@@ -37,18 +36,26 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$GH_TOKEN"
-          if [ "$SOURCE" != "$(git rev-parse origin/main)" ]; then
-            echo "Skip superseded main CI completion: $SOURCE"
-            exit 0
-          fi
+          SOURCE=$(git rev-parse HEAD)
+          echo "SOURCE=$SOURCE" >> "$GITHUB_ENV"
           runs=$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?branch=main&head_sha=$SOURCE&status=success")
-          if [ "$(jq '[.workflow_runs[] | select(.head_sha == env.SOURCE and .event == "push")] | length' <<< "$runs")" -eq 0 ]; then
+          if [ "$(jq --arg source "$SOURCE" '[.workflow_runs[] | select(.head_sha == $source and .event == "push")] | length' <<< "$runs")" -eq 0 ]; then
             # CI for this commit is still running or failed; its completion event runs this job again.
             echo "Skip main commit without a successful CI run yet: $SOURCE"
             exit 0
           fi
           git remote add upstream https://github.com/Comfy-Org/ComfyUI.git
           git fetch --no-tags upstream master '+refs/tags/*:refs/upstream-tags/*'
+          git fetch --no-tags origin '+refs/heads/release/upstream-v*:refs/remotes/origin/release/upstream-v*'
+          identity=$(gh api user)
+          name=$(jq -r .login <<< "$identity")
+          email="$(jq -r .id <<< "$identity")+$name@users.noreply.github.com"
+          {
+            echo "GIT_AUTHOR_NAME=$name"
+            echo "GIT_AUTHOR_EMAIL=$email"
+            echo "GIT_COMMITTER_NAME=$name"
+            echo "GIT_COMMITTER_EMAIL=$email"
+          } >> "$GITHUB_ENV"
           echo "current=true" >> "$GITHUB_OUTPUT"
       - name: Create immutable source tags
         if: steps.source.outputs.current == 'true'
@@ -58,6 +65,18 @@ jobs:
           while IFS= read -r release; do
             version=$(jq -r .version <<< "$release")
             commit=$(jq -r .sourceCommit <<< "$release")
+            branch=$(jq -r '.branch // empty' <<< "$release")
+            if [ -n "$branch" ]; then
+              if ! git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+                git push origin "$commit:refs/heads/$branch"
+              fi
+            fi
+            runs=$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$commit&status=success")
+            if [ "$(jq --arg commit "$commit" --arg branch "${branch:-main}" \
+              '[.workflow_runs[] | select(.head_sha == $commit and .head_branch == $branch and .event == "push")] | length' <<< "$runs")" -eq 0 ]; then
+              echo "Wait for exact-source CI: $commit"
+              continue
+            fi
             jq -n --arg tag "v$version" --arg message "$release" --arg object "$commit" \
               '{tag: $tag, message: $message, object: $object, type: "commit"}' > /tmp/inference-tag.json
             object=$(gh api --method POST "repos/$REPOSITORY/git/tags" --input /tmp/inference-tag.json --jq .sha)
