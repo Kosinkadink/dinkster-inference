@@ -67,6 +67,8 @@ jobs:
             cmp release-provenance.json <(jq -Sc '.[0]' "$manifest" | python -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True))')
             echo "version=$version" >> "$GITHUB_OUTPUT"
           elif [ -n "$RELEASE_TAG" ]; then
+            # Checkout can replace an annotated tag with the event's commit ref.
+            git fetch --force --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
             version=${RELEASE_TAG#v}
             python tools/inference_release.py prepare --version "$version"
             echo "version=$version" >> "$GITHUB_OUTPUT"

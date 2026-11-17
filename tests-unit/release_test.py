@@ -194,9 +194,18 @@ def test_stable_release_uses_tag_scope_and_retains_fork_changes(tmp_path, change
         assert git("rev-parse", "HEAD") == selected
         assert (tmp_path / "outputs").read_text() == "version=0.1.3\n"
     else:
+        git("clone", "--bare", str(repo), str(tmp_path / "origin"))
+        git("remote", "add", "origin", str(tmp_path / "origin"))
         git("switch", "--detach", selected)
-        subprocess.run([sys.executable, str(repo / "tools/inference_release.py"),
-                        "prepare", "--version", "0.1.3"], cwd=repo, check=True)
+        # actions/checkout replaces the fetched annotated tag with its event commit.
+        git("update-ref", "refs/tags/v0.1.3", selected)
+        workflow = yaml.safe_load((tools.parent / ".github/workflows/release.yml").read_text())
+        [command] = [step["run"] for step in workflow["jobs"]["build"]["steps"]
+                     if step.get("name") == "Select and validate immutable release source"]
+        environment = {**os.environ, "HISTORICAL": "false", "RELEASE_TAG": "v0.1.3",
+                       "GITHUB_OUTPUT": str(tmp_path / "outputs")}
+        environment["PATH"] = str(Path(sys.executable).parent) + os.pathsep + environment["PATH"]
+        subprocess.run(["bash", "-eu", "-c", command], cwd=repo, env=environment, check=True)
     assert json.loads((repo / "dinkster_inference/_release.json").read_text()) == stable
     assert json.loads((repo / "release-provenance.json").read_text()) == stable
     if changes != "library":
