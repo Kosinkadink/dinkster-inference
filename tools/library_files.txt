@@ -399,11 +399,13 @@ tests tests-unit/comfy_test/anonymous_file_test.py
 tests tests-unit/comfy_test/combined_linear_test.py
 tests tests-unit/comfy_test/embedded_tokenizer_test.py
 tests tests-unit/comfy_test/gemma4_template_test.py
+tests tests-unit/comfy_test/gemma_media_inputs_test.py
 tests tests-unit/comfy_test/load_torch_file_test.py
 tests tests-unit/comfy_test/mediapipe_import_test.py
 tests tests-unit/comfy_test/model_detection_test.py
 tests tests-unit/comfy_test/model_management_test.py
 tests tests-unit/comfy_test/model_prefetch_cleanup_test.py
+tests tests-unit/comfy_test/ph3_image_vae_test.py
 tests tests-unit/comfy_test/qwen21_cache_admission_test.py
 tests tests-unit/comfy_test/qwen35_decode_test.py
 tests tests-unit/comfy_test/qwen_vl_image_channels_test.py
