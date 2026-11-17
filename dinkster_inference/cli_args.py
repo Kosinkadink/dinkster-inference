@@ -41,6 +41,8 @@ parser.add_argument("--fp16-intermediates", action="store_true", help="Experimen
 
 parser.add_argument("--force-channels-last", action="store_true", help="Force channels last format when inferencing the models.")
 
+parser.add_argument("--directml", type=int, nargs="?", metavar="DIRECTML_DEVICE", const=-1, help="Use torch-directml.")
+
 parser.add_argument("--supports-fp8-compute", action="store_true", help="ComfyUI will act like if the device supports fp8 compute.")
 parser.add_argument("--enable-triton-backend", action="store_true", help="ComfyUI will enable the use of Triton backend in comfy-kitchen. Is disabled at launch by default.")
 parser.add_argument("--disable-triton-backend", action="store_true", help="Force-disable the comfy-kitchen Triton backend, overriding --enable-triton-backend.")
