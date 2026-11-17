@@ -478,7 +478,8 @@ def test_greedy_mtp_matches_plain_greedy(monkeypatch, image_prompt):
         assert discards and min(discards) < max(discards)  # partial acceptance happened
 
 
-@pytest.mark.parametrize("top_k, quantile", [(0, 0.42), (0, 0.92), (7, 0.92)])
+@pytest.mark.parametrize("quantile", [0.42, 0.8, 0.92])
+@pytest.mark.parametrize("top_k", [0, 7])
 def test_sampled_tree_matches_sequential_with_same_draws(monkeypatch, quantile, top_k):
     # Couple draws by quantile rather than RNG consumption: unused tree rows also sample.
     def draw(weights, num_samples, generator=None):
@@ -524,6 +525,7 @@ def test_adaptive_switch_preserves_sequential_output(monkeypatch, sampled):
     expected = model.generate(embeds.clone(), mtp=False, **settings)
     assert model.generate(embeds.clone(), mtp=True, **settings) == expected
     assert len(set(switches)) == 4, switches
+    assert model.generate(embeds.clone(), mtp=False, **{**settings, "repetition_penalty": 1.0, "presence_penalty": 0.0}) != expected
 
 
 class _FakePacked:
