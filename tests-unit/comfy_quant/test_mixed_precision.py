@@ -17,6 +17,7 @@ if not has_gpu():
     args.cpu = True
 
 from dinkster_inference import ops
+from dinkster_inference.model_patcher import ModelPatcher
 from dinkster_inference.quant_ops import QUANT_ALGOS, QuantizedTensor
 import dinkster_inference.utils
 
@@ -163,6 +164,12 @@ class TestMixedPrecisionOps(unittest.TestCase):
         self.assertTrue(torch.equal(state_dict2["layer1.weight"].view(torch.uint8), fp8_weight.view(torch.uint8)))
         self.assertEqual(state_dict2["layer1.weight_scale"].item(), 3.0)
         self.assertEqual(model.layer1.weight._layout_cls, "TensorCoreFP8E4M3Layout")
+
+        cpu = torch.device("cpu")
+        with self.assertLogs(level="WARNING") as logs:
+            patches = ModelPatcher(model, cpu, cpu).get_key_patches("layer1.")
+        self.assertTrue(any("layer1.weight_scale" in message for message in logs.output))
+        self.assertEqual(set(patches), {"layer1.weight", "layer1.bias"})
 
         # Verify non-quantized layers are standard tensors
         self.assertNotIsInstance(state_dict2["layer2.weight"], QuantizedTensor)
