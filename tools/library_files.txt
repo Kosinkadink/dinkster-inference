@@ -374,6 +374,7 @@ library dinkster_inference/text_encoders/t5_pile_tokenizer/tokenizer.model
 library dinkster_inference/text_encoders/t5_tokenizer/special_tokens_map.json
 library dinkster_inference/text_encoders/t5_tokenizer/tokenizer.json
 library dinkster_inference/text_encoders/t5_tokenizer/tokenizer_config.json
+library dinkster_inference/text_encoders/token_stream.py
 library dinkster_inference/text_encoders/umt5_config_base.json
 library dinkster_inference/text_encoders/umt5_config_xxl.json
 library dinkster_inference/text_encoders/wan.py

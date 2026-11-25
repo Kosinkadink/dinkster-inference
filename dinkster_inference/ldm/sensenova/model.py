@@ -11,6 +11,7 @@ from dinkster_inference.ldm.flux.math import apply_rope1
 from dinkster_inference.ldm.modules.attention import AttentionTensorContainer, ComfyAttention, optimized_attention
 from dinkster_inference.ldm.modules.diffusionmodules.mmdit import TimestepEmbedder
 from dinkster_inference.text_encoders.llama import BaseGenerate, FixedKV
+from dinkster_inference.text_encoders.token_stream import report_generated_tokens
 
 from .conditioning import IM_END_ID, MERGED_PATCH_SIZE, image_token_mask
 from .sampling import resolution_noise_scale
@@ -630,6 +631,7 @@ class SenseNovaTextModel(nn.Module, BaseGenerate):
             if token_id == IM_END_ID:
                 return token_ids, token_id
             token_ids.append(token_id)
+            report_generated_tokens(token_ids)
             history.append(token_id)
             if token_id in stop_token_ids:
                 return token_ids, token_id
