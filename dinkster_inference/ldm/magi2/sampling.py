@@ -186,17 +186,23 @@ def sample_flow_unipc(
             h_phi_k = h_phi_k / hh - 1.0 / fact
 
         x_f = sample.float()
-        x_t_base = (sig_t / sig_s0) * x_f - alpha_t * h_phi_1 * m0.float()
+        x_t_base = x_f * (sig_t / sig_s0) - m0.float() * (alpha_t * h_phi_1)
         if d1s:
-            d1_stack = torch.stack(d1s, dim=1)
             if order == 2:
                 rhos_p = torch.tensor([0.5], device=sample.device, dtype=torch.float32)
             else:
                 R_mat = torch.stack(R_rows)[:-1, :-1]
                 b_vec = torch.stack(b_vals)[:-1]
                 rhos_p = torch.linalg.solve(R_mat, b_vec)
-            pred_res = torch.einsum("k,bk...->b...", rhos_p, d1_stack)
-            x_next = x_t_base - alpha_t * B_h * pred_res
+            if getattr(sample, "is_nested", False):
+                pred_res = d1s[0] * rhos_p[0]
+                for k in range(1, len(d1s)):
+                    pred_res = pred_res + d1s[k] * rhos_p[k]
+                x_next = x_t_base - pred_res * (alpha_t * B_h)
+            else:
+                d1_stack = torch.stack(d1s, dim=1)
+                pred_res = torch.einsum("k,bk...->b...", rhos_p, d1_stack)
+                x_next = x_t_base - alpha_t * B_h * pred_res
         else:
             x_next = x_t_base
         return x_next.to(sample.dtype)
@@ -245,14 +251,20 @@ def sample_flow_unipc(
         else:
             rhos_c = torch.linalg.solve(torch.stack(R_rows), torch.stack(b_vals))
 
-        x_t_base = (sig_t / sig_s0) * prev_sample.float() - alpha_t * h_phi_1 * m0.float()
-        corr_res = (
-            torch.einsum("k,bk...->b...", rhos_c[:-1], torch.stack(d1s, dim=1))
-            if d1s
-            else 0.0
-        )
+        x_t_base = prev_sample.float() * (sig_t / sig_s0) - m0.float() * (alpha_t * h_phi_1)
         d1_t = this_x0.float() - m0.float()
-        x_corr = x_t_base - alpha_t * B_h * (corr_res + rhos_c[-1] * d1_t)
+        if getattr(prev_sample, "is_nested", False):
+            corr_term = d1_t * rhos_c[-1]
+            for k, d1_k in enumerate(d1s):
+                corr_term = corr_term + d1_k * rhos_c[k]
+            x_corr = x_t_base - corr_term * (alpha_t * B_h)
+        else:
+            corr_res = (
+                torch.einsum("k,bk...->b...", rhos_c[:-1], torch.stack(d1s, dim=1))
+                if d1s
+                else 0.0
+            )
+            x_corr = x_t_base - alpha_t * B_h * (corr_res + rhos_c[-1] * d1_t)
         return x_corr.to(prev_sample.dtype)
 
     sample = x

@@ -6,6 +6,11 @@ from pathlib import Path
 
 from safetensors.torch import save_file
 import torch
+
+if not torch.cuda.is_available():
+    import dinkster_inference.cli_args
+
+    dinkster_inference.cli_args.args.cpu = True
 import torch.nn.functional as F
 import pytest
 
@@ -528,4 +533,17 @@ def test_magi2_preview_packed_av_latent_roundtrip(tmp_path: Path):
     assert torch.equal(a_out_u, a_raw)
 
 
-
+def test_flow_unipc_supports_nested_tensor():
+    torch.manual_seed(77)
+    nt_init = dinkster_inference.nested_tensor.NestedTensor(
+        (torch.randn(1, 4, 2, 2, 2), torch.randn(1, 8, 6))
+    )
+    nt_target = dinkster_inference.nested_tensor.NestedTensor(
+        (torch.randn(1, 4, 2, 2, 2), torch.randn(1, 8, 6))
+    )
+    f_sigmas = magi2_sampling.flow_unipc_sigmas(6, shift=7.0)
+    solved = magi2_sampling.sample_flow_unipc(lambda _x, _s: nt_target, nt_init, f_sigmas)
+    s_v, s_a = solved.unbind()
+    t_v, t_a = nt_target.unbind()
+    assert torch.allclose(s_v, t_v, atol=1e-5)
+    assert torch.allclose(s_a, t_a, atol=1e-5)
