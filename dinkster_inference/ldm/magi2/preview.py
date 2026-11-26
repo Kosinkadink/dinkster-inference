@@ -660,6 +660,8 @@ class Magi2PreviewModel(nn.Module):
         timestep: torch.Tensor,
         context: torch.Tensor,
         magi2_payload: Optional[dict],
+        denoise_mask: Optional[torch.Tensor] = None,
+        audio_denoise_mask: Optional[torch.Tensor] = None,
     ) -> dict:
         batch_size, _, t_vid, h_vid, w_vid = video.shape
         pt, ph, pw = self.patch_size
@@ -685,6 +687,38 @@ class Magi2PreviewModel(nn.Module):
         txt_lens = payload.get("txt_lens")
         ref_images = payload.get("ref_images")  # list of dicts per batch item or shared
         device = video.device
+
+        vid_mask_tokens: Optional[torch.Tensor] = None
+        if denoise_mask is not None:
+            v_m = denoise_mask.to(device=device, dtype=torch.float32)
+            if v_m.ndim == 4:
+                v_m = v_m.unsqueeze(1)
+            else:
+                v_m = v_m[:, :1]
+            if v_m.shape[0] == 1 and batch_size > 1:
+                v_m = v_m.expand(batch_size, -1, -1, -1, -1)
+            v_m = dinkster_inference.ldm.common_dit.pad_to_patch_size(v_m, self.patch_size)
+            vid_mask_tokens = (
+                v_m.view(batch_size, 1, t_steps, pt, h_steps, ph, w_steps, pw)
+                .amax(dim=(1, 3, 5, 7))
+                .reshape(batch_size, vid_tok_per_item)
+                .clamp(0.0, 1.0)
+            )
+
+        aud_mask_tokens: Optional[torch.Tensor] = None
+        if audio_denoise_mask is not None and aud_len > 0:
+            a_m = audio_denoise_mask.to(device=device, dtype=torch.float32)
+            if a_m.ndim >= 3:
+                a_m = a_m.amax(dim=1)
+            elif a_m.ndim == 1:
+                a_m = a_m.unsqueeze(0)
+            if a_m.shape[0] == 1 and batch_size > 1:
+                a_m = a_m.expand(batch_size, -1)
+            if a_m.shape[1] < aud_len:
+                a_m = F.pad(a_m, (0, aud_len - a_m.shape[1]), value=1.0)
+            elif a_m.shape[1] > aud_len:
+                a_m = a_m[:, :aud_len]
+            aud_mask_tokens = a_m.clamp(0.0, 1.0)
 
         video_parts: list[torch.Tensor] = []
         audio_parts: list[torch.Tensor] = []
@@ -712,12 +746,14 @@ class Magi2PreviewModel(nn.Module):
 
         # FlowUniPCMultistepScheduler.set_timesteps integer-truncates (sigmas * 1000).to(int64)
         # before normalizing back by 1000, keeping sinusoidal_embedding_1d on exact integer positions.
-        t_flat = torch.floor(timestep.reshape(-1).float()) / 1000.0
-        if t_flat.numel() == 1 and batch_size > 1:
-            t_flat = t_flat.expand(batch_size)
+        ts_raw = timestep.reshape(-1).float().to(device=device)
+        if ts_raw.numel() == 1 and batch_size > 1:
+            ts_raw = ts_raw.expand(batch_size)
+        t_flat = torch.floor(ts_raw) / 1000.0
 
         for b in range(batch_size):
             item_start = cursor
+            ts_b = ts_raw[b]
             sigma_b = t_flat[b]
 
             # 1. Generated video tokens
@@ -727,7 +763,10 @@ class Magi2PreviewModel(nn.Module):
             v_cursor += vid_tok_per_item
             modality_parts.append(torch.full((vid_tok_per_item,), int(Modality.VIDEO), device=device, dtype=torch.int32))
             coords_parts.append(vid_coords)
-            raw_t_parts.append(torch.full((vid_tok_per_item,), sigma_b.item(), device=device, dtype=torch.float32))
+            if vid_mask_tokens is not None:
+                raw_t_parts.append(torch.floor(vid_mask_tokens[b] * ts_b) / 1000.0)
+            else:
+                raw_t_parts.append(torch.full((vid_tok_per_item,), sigma_b.item(), device=device, dtype=torch.float32))
             cursor += vid_tok_per_item
 
             # 2. Generated audio tokens
@@ -738,7 +777,10 @@ class Magi2PreviewModel(nn.Module):
                 a_cursor += aud_len
                 modality_parts.append(torch.full((aud_len,), int(Modality.AUDIO), device=device, dtype=torch.int32))
                 coords_parts.append(aud_coords)
-                raw_t_parts.append(torch.full((aud_len,), sigma_b.item(), device=device, dtype=torch.float32))
+                if aud_mask_tokens is not None:
+                    raw_t_parts.append(torch.floor(aud_mask_tokens[b] * ts_b) / 1000.0)
+                else:
+                    raw_t_parts.append(torch.full((aud_len,), sigma_b.item(), device=device, dtype=torch.float32))
                 cursor += aud_len
             else:
                 gen_audio_slices.append((a_cursor, a_cursor))
@@ -877,6 +919,8 @@ class Magi2PreviewModel(nn.Module):
         context: torch.Tensor,
         transformer_options: dict = {},
         magi2_payload: Optional[dict] = None,
+        denoise_mask: Optional[torch.Tensor] = None,
+        audio_denoise_mask: Optional[torch.Tensor] = None,
         **kwargs,
     ):
         is_av = not torch.is_tensor(x)
@@ -887,7 +931,15 @@ class Magi2PreviewModel(nn.Module):
         video_padded = dinkster_inference.ldm.common_dit.pad_to_patch_size(video_in, self.patch_size)
         compute_dtype = video_padded.dtype
 
-        packed = self._pack_batch(video_padded, audio_in, timestep, context, magi2_payload)
+        packed = self._pack_batch(
+            video_padded,
+            audio_in,
+            timestep,
+            context,
+            magi2_payload,
+            denoise_mask=denoise_mask,
+            audio_denoise_mask=audio_denoise_mask,
+        )
         modality_dispatcher = ModalityDispatcher(packed["modality_mapping"], num_modalities=3)
 
         h, rope = self.pre_adapter(

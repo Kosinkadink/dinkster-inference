@@ -617,3 +617,151 @@ def test_magi2_uncond_zero_ref_image_stays_zero_normalized(tmp_path: Path):
     zero_out = ec_zero["magi2_payload"].cond["ref_images"][0][0]["latent"]
     assert torch.allclose(pos_out, model.latent_format.process_video_in(pos_lat), atol=1e-6)
     assert float(zero_out.abs().max().item()) == 0.0
+
+
+def test_magi2_multi_figure_prompt_normalization_and_packing(tmp_path: Path):
+    tok = magi2_te.Magi2Tokenizer()
+
+    # Single figure fallback keeps exact first-frame hint
+    single_norm = magi2_te.normalize_magi2_prompt("A calm lake.", ensure_figure_ids=[1])
+    assert "The first frame refers to <Figure 1>" in single_norm
+
+    # Multi-figure fallback appends distinct Reference k hints for missing figures without touching present ones
+    multi_partial = magi2_te.normalize_magi2_prompt(
+        "Character <Figure 1> enters the room.", ensure_figure_ids=[1, 2, 3]
+    )
+    assert multi_partial.count("<Figure 1>") == 1
+    assert "Reference 2 refers to <Figure 2>" in multi_partial
+    assert "Reference 3 refers to <Figure 3>" in multi_partial
+
+    toks = tok.tokenize_with_weights(multi_partial, magi2_figure_ids=[1, 2, 3])
+    for fid in (1, 2, 3):
+        assert len(toks["magi2_figure_spans"][fid]) >= 3
+    assert toks["magi2_figure_spans"][1] != toks["magi2_figure_spans"][2]
+    assert toks["magi2_figure_spans"][2] != toks["magi2_figure_spans"][3]
+
+    # Verify _pack_batch places multiple reference images at t_steps + 2 + k with raw_t == 0
+    raw_dir = tmp_path / "raw_multi_ref"
+    raw_dir.mkdir()
+    save_file(_make_raw_sandai_preview_sd(), str(raw_dir / "model.safetensors"))
+    bf16_file = tmp_path / "prev_multi_ref.safetensors"
+    convert_and_quantize(raw_dir, bf16_file, model_kind="preview", fmt="bf16", device_str="cpu")
+    patcher = dinkster_inference.sd.load_diffusion_model(str(bf16_file))
+    dm = patcher.model.diffusion_model
+
+    video = torch.randn(1, 48, 3, 2, 2)
+    audio = torch.randn(1, 64, 5)
+    ctx = torch.randn(1, 4, dm.text_in_channels)
+    refs = [
+        {"latent": torch.randn(1, 48, 1, 2, 2), "special_token": torch.ones(dm.text_in_channels)},
+        {"latent": torch.randn(1, 48, 1, 2, 4), "special_token": torch.full((dm.text_in_channels,), 2.0)},
+    ]
+    packed = dm._pack_batch(
+        video, audio, torch.tensor([500.0]), ctx, {"txt_lens": [4], "ref_images": [refs]}
+    )
+    # 12 video + 5 audio + 4 text + (1 + 4) ref1 + (1 + 8) ref2 = 35 tokens
+    assert packed["total_tokens"] == 35
+    coords = packed["coords_mapping"]
+    # Ref 0 sits at t_off = 3 + 2 + 0 = 5; Ref 1 sits at t_off = 3 + 2 + 1 = 6
+    assert float(coords[21, 0].item()) == 5.0
+    assert float(coords[26, 0].item()) == 6.0
+    # Clean conditioning tokens (text + refs) have raw_t == 0 -> cos(0) == 1, sin(0) == 0
+    half_t = dm.time_channel_dim // 2
+    assert torch.allclose(packed["time_emb"][21:, :half_t], torch.ones(14, half_t))
+    assert torch.allclose(packed["time_emb"][21:, half_t:], torch.zeros(14, half_t))
+
+
+def test_magi2_per_token_av_denoise_mask_sampling(tmp_path: Path):
+    raw_dir = tmp_path / "raw_mask_prev"
+    raw_dir.mkdir()
+    save_file(_make_raw_sandai_preview_sd(), str(raw_dir / "model.safetensors"))
+    bf16_file = tmp_path / "prev_mask_bf16.safetensors"
+    convert_and_quantize(raw_dir, bf16_file, model_kind="preview", fmt="bf16", device_str="cpu")
+    patcher = dinkster_inference.sd.load_diffusion_model(str(bf16_file))
+    dm = patcher.model.diffusion_model
+
+    # 1. Verify _pack_batch per-token video & audio diffusion times
+    v_in = torch.randn(1, 48, 3, 2, 2)
+    a_in = torch.randn(1, 64, 6)
+    v_mask = torch.ones(1, 1, 3, 2, 2)
+    v_mask[:, :, 0] = 0.0  # Anchor frame 0
+    a_mask = torch.ones(1, 1, 6)
+    a_mask[:, :, :2] = 0.0  # Anchor first 2 audio tokens
+    ctx = torch.randn(1, 3, dm.text_in_channels)
+    packed = dm._pack_batch(
+        v_in,
+        a_in,
+        torch.tensor([750.0]),
+        ctx,
+        {"txt_lens": [3]},
+        denoise_mask=v_mask,
+        audio_denoise_mask=a_mask,
+    )
+    half_t = dm.time_channel_dim // 2
+    # Frame 0 (first 4 video tokens) must have t=0 -> cos=1, sin=0; frames 1..2 must have t=0.75
+    assert torch.allclose(packed["time_emb"][:4, :half_t], torch.ones(4, half_t))
+    assert torch.allclose(packed["time_emb"][:4, half_t:], torch.zeros(4, half_t))
+    expected_750 = magi2_common.sinusoidal_embedding_1d(dm.time_channel_dim, torch.tensor([0.75]))[0]
+    assert torch.allclose(packed["time_emb"][4:12], expected_750.expand(8, -1), atol=1e-6)
+    # Audio tokens 0..1 at indices 12..14 must have t=0; 2..5 at indices 14..18 must have t=0.75
+    assert torch.allclose(packed["time_emb"][12:14, half_t:], torch.zeros(2, half_t))
+    assert torch.allclose(packed["time_emb"][14:18], expected_750.expand(4, -1), atol=1e-6)
+
+    # 2. End-to-end samplers.sample: verify clean video frame 0 and clean audio prefix enter
+    # forward un-noised AND remain preserved in the final output while unmasked tokens denoise.
+    seen_inputs: list[tuple[torch.Tensor, torch.Tensor]] = []
+    orig_forward = dm.forward
+
+    def spy_forward(x, timestep, context, **kwargs):
+        seen_inputs.append((x[0].detach().clone(), x[1].detach().clone()))
+        return orig_forward(x, timestep, context, **kwargs)
+
+    dm.forward = spy_forward
+    try:
+        torch.manual_seed(314)
+        v_guide = torch.randn(1, 48, 3, 2, 2) * 1.25
+        a_guide = torch.randn(1, 64, 6) * 0.8
+        latent_av = dinkster_inference.nested_tensor.NestedTensor((v_guide.clone(), a_guide.clone()))
+        noise_av = dinkster_inference.nested_tensor.NestedTensor(
+            (torch.randn_like(v_guide), torch.randn_like(a_guide))
+        )
+        mask_av = dinkster_inference.nested_tensor.NestedTensor((v_mask.clone(), a_mask.clone()))
+
+        text_dim = dm.text_in_channels
+        pos = [[torch.randn(1, 4, text_dim), {"magi2_txt_len": 4}]]
+        neg = [[torch.randn(1, 2, text_dim), {"magi2_txt_len": 2}]]
+        sampler = dinkster_inference.samplers.KSAMPLER(magi2_sampling.sample_flow_unipc)
+        sigmas = magi2_sampling.flow_unipc_sigmas(3, shift=7.0)
+
+        sampled = dinkster_inference.samplers.sample(
+            patcher,
+            noise_av,
+            pos,
+            neg,
+            cfg=2.5,
+            device=patcher.load_device,
+            sampler=sampler,
+            sigmas=sigmas,
+            latent_image=latent_av,
+            denoise_mask=mask_av,
+            disable_pbar=True,
+            seed=19,
+        )
+        v_out, a_out = sampled.unbind()
+        v_out = v_out.detach().cpu()
+        a_out = a_out.detach().cpu()
+        # Masked regions (mask == 0) must equal the original clean guide latents!
+        assert torch.allclose(v_out[:, :, :1], v_guide[:, :, :1], atol=1e-5)
+        assert torch.allclose(a_out[:, :, :2], a_guide[:, :, :2], atol=1e-5)
+        # Unmasked regions (mask == 1) must have evolved away from guide latents!
+        assert not torch.allclose(v_out[:, :, 1:], v_guide[:, :, 1:], atol=1e-2)
+        assert not torch.allclose(a_out[:, :, 2:], a_guide[:, :, 2:], atol=1e-2)
+
+        # Verify model forward received normalized clean v_guide[:, :, :1] and clean a_guide[:, :, :2] (NOT sigma-noised!)
+        expected_v0_norm = patcher.model.latent_format.process_video_in(v_guide)[:, :, :1]
+        expected_a0 = a_guide[:, :, :2]
+        for v_step, a_step in seen_inputs:
+            assert torch.allclose(v_step[:1, :, :1].cpu().float(), expected_v0_norm.float(), atol=2e-2)
+            assert torch.allclose(a_step[:1, :, :2].cpu().float(), expected_a0.float(), atol=2e-2)
+    finally:
+        dm.forward = orig_forward

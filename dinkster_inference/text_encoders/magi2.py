@@ -192,9 +192,16 @@ def json_to_compact_markdown(raw_json: str | dict[str, Any]) -> str:
 
 def normalize_magi2_prompt(prompt: str, ensure_figure_ids: Optional[list[int]] = None) -> str:
     if ensure_figure_ids:
-        missing = [fid for fid in ensure_figure_ids if f"<Figure {fid}>" not in prompt]
+        ordered_ids = list(dict.fromkeys(int(fid) for fid in ensure_figure_ids))
+        missing = [fid for fid in ordered_ids if f"<Figure {fid}>" not in prompt]
         if missing:
-            ref_lines = [f"The first frame refers to <Figure {fid}>" for fid in missing]
+            single_first_frame = ordered_ids == [1]
+            ref_lines = [
+                "The first frame refers to <Figure 1>"
+                if single_first_frame and fid == 1
+                else f"Reference {fid} refers to <Figure {fid}>"
+                for fid in missing
+            ]
             try:
                 parsed = json.loads(prompt)
                 if not isinstance(parsed, dict):

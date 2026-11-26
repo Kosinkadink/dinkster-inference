@@ -3251,6 +3251,9 @@ class Magi2Preview(BaseModel):
     def process_latent_out(self, latent):
         return self._transform_video_slice(latent, self.latent_format.process_video_out)
 
+    def scale_latent_inpaint(self, sigma, noise, latent_image, **kwargs):
+        return latent_image
+
     def extra_conds(self, **kwargs):
         import dinkster_inference.ldm.magi2.common
         out = super().extra_conds(**kwargs)
@@ -3261,6 +3264,28 @@ class Magi2Preview(BaseModel):
         latent_shapes = kwargs.get("latent_shapes", None)
         if latent_shapes is not None and len(latent_shapes) > 1:
             out['latent_shapes'] = dinkster_inference.conds.CONDConstant(latent_shapes)
+
+        denoise_mask = kwargs.get("concat_mask", kwargs.get("denoise_mask", None))
+        audio_denoise_mask = kwargs.get("audio_denoise_mask", None)
+        if denoise_mask is not None:
+            if getattr(denoise_mask, "is_nested", False):
+                streams = denoise_mask.unbind()
+                if len(streams) > 1 and audio_denoise_mask is None:
+                    audio_denoise_mask = streams[1]
+                denoise_mask = streams[0]
+            elif latent_shapes is not None and len(latent_shapes) > 1 and denoise_mask.ndim in (2, 3):
+                unpacked = utils.unpack_latents(denoise_mask, latent_shapes)
+                if len(unpacked) > 1 and audio_denoise_mask is None:
+                    audio_denoise_mask = unpacked[1]
+                denoise_mask = unpacked[0]
+        if denoise_mask is not None:
+            out["denoise_mask"] = dinkster_inference.conds.CONDRegular(denoise_mask[:, :1])
+        if audio_denoise_mask is not None:
+            out["audio_denoise_mask"] = dinkster_inference.conds.CONDRegular(
+                audio_denoise_mask.amax(dim=1, keepdim=True)
+                if audio_denoise_mask.ndim >= 3
+                else audio_denoise_mask
+            )
 
         payload = {}
         txt_len = kwargs.get("magi2_txt_len", None)
@@ -3308,6 +3333,11 @@ class Magi2Refiner(Magi2Preview):
             unet_model=dinkster_inference.ldm.magi2.refiner.Magi2RefinerModel,
         )
         self.model_sampling = dinkster_inference.ldm.magi2.sampling.Magi2RefinerModelSampling(model_config)
+
+    def scale_latent_inpaint(self, sigma, noise, latent_image, **kwargs):
+        return BaseModel.scale_latent_inpaint(
+            self, sigma=sigma, noise=noise, latent_image=latent_image, **kwargs
+        )
 
     def memory_required(self, input_shape, cond_shapes={}):
         base = super().memory_required(input_shape, cond_shapes=cond_shapes)
