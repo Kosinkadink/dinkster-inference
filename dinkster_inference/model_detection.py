@@ -1254,6 +1254,105 @@ def detect_unet_config(state_dict, key_prefix, metadata=None):
     )):
         return {"audio_model": "yue2"}
 
+    if (
+        '{}pre_adapter.video_embedder.weight'.format(key_prefix) in state_dict_keys
+        and '{}post_adapter.final_linear_video.weight'.format(key_prefix) in state_dict_keys
+        and '{}block.layers.0.attention.pre_norm.weight'.format(key_prefix) in state_dict_keys
+    ):  # MAGI-2 Preview (mHC + MoE) and MAGI-2 Refiner (dense 3D block-window)
+        num_layers = count_blocks(state_dict_keys, '{}block.layers.'.format(key_prefix) + '{}.')
+        video_in_ch = state_dict['{}post_adapter.final_linear_video.weight'.format(key_prefix)].shape[0]
+        audio_in_ch = (
+            state_dict['{}post_adapter.final_linear_audio.weight'.format(key_prefix)].shape[0]
+            if '{}post_adapter.final_linear_audio.weight'.format(key_prefix) in state_dict_keys
+            else 64
+        )
+        has_mhc = '{}block.layers.0.mhc_bias_pre_attn'.format(key_prefix) in state_dict_keys
+        if has_mhc:
+            num_stream = state_dict['{}block.layers.0.mhc_bias_pre_attn'.format(key_prefix)].shape[0]
+            hidden_size = state_dict['{}pre_adapter.video_embedder.weight'.format(key_prefix)].shape[0] // num_stream
+        else:
+            num_stream = 1
+            hidden_size = state_dict['{}pre_adapter.video_embedder.weight'.format(key_prefix)].shape[0]
+
+        mm_layers = [
+            i
+            for i in range(num_layers)
+            if '{}block.layers.{}.attention.pre_norm.weight'.format(key_prefix, i) in state_dict_keys
+            and state_dict['{}block.layers.{}.attention.pre_norm.weight'.format(key_prefix, i)].shape[0] == 3 * hidden_size
+        ]
+        mm0 = 3 if 0 in mm_layers else 1
+        head_dim = state_dict['{}block.layers.0.attention.q_norm.weight'.format(key_prefix)].shape[0] // mm0
+
+        g_split_key = '{}block.layers.0.attention.linear_g.linears.0.weight'.format(key_prefix)
+        g_raw_key = '{}block.layers.0.attention.linear_g.weight'.format(key_prefix)
+        if g_split_key in state_dict_keys:
+            num_heads_q = state_dict[g_split_key].shape[0]
+        elif g_raw_key in state_dict_keys:
+            num_heads_q = state_dict[g_raw_key].shape[0] // mm0
+        else:
+            num_heads_q = hidden_size // head_dim
+
+        non_mm = next((i for i in range(num_layers) if i not in mm_layers), 0)
+        qkv_non_mm = '{}block.layers.{}.attention.linear_qkv.weight'.format(key_prefix, non_mm)
+        qkv_split0 = '{}block.layers.0.attention.linear_qkv.linears.0.weight'.format(key_prefix)
+        qkv_raw0 = '{}block.layers.0.attention.linear_qkv.weight'.format(key_prefix)
+        if qkv_non_mm in state_dict_keys and non_mm not in mm_layers:
+            qkv_rows = state_dict[qkv_non_mm].shape[0]
+        elif qkv_split0 in state_dict_keys:
+            qkv_rows = state_dict[qkv_split0].shape[0]
+        else:
+            qkv_rows = state_dict[qkv_raw0].shape[0] // mm0
+        # Round down to head_dim multiple in case NVFP4 padded row count to 16
+        qkv_rows = (qkv_rows // head_dim) * head_dim
+        num_heads_kv = max(1, (qkv_rows - num_heads_q * head_dim) // (2 * head_dim))
+
+        if has_mhc:
+            moe_layers = [
+                i
+                for i in range(num_layers)
+                if '{}block.layers.{}.mlp.moe_mlp.gate'.format(key_prefix, i) in state_dict_keys
+            ]
+            moe_num_heads = 12
+            moe_num_experts = 256
+            moe_inter = 1280
+            if moe_layers:
+                m0 = moe_layers[0]
+                gate_t = state_dict['{}block.layers.{}.mlp.moe_mlp.gate'.format(key_prefix, m0)]
+                moe_num_heads = max(1, hidden_size // gate_t.shape[1])
+                moe_num_experts = gate_t.shape[0] // moe_num_heads
+                sfc1_key = '{}block.layers.{}.mlp.shared_expert_fc1.weight'.format(key_prefix, m0)
+                if sfc1_key in state_dict_keys:
+                    moe_inter = (state_dict[sfc1_key].shape[0] // 32) * 16
+            return {
+                "image_model": "magi2_preview",
+                "num_layers": num_layers,
+                "hidden_size": hidden_size,
+                "head_dim": head_dim,
+                "num_heads_q": num_heads_q,
+                "num_heads_kv": num_heads_kv,
+                "video_in_channels": video_in_ch,
+                "audio_in_channels": audio_in_ch,
+                "mm_layers": tuple(mm_layers),
+                "moe_layers": tuple(moe_layers),
+                "num_stream": num_stream,
+                "moe_num_heads": moe_num_heads,
+                "moe_num_experts": moe_num_experts,
+                "moe_intermediate_size": moe_inter,
+            }
+
+        return {
+            "image_model": "magi2_refiner",
+            "num_layers": num_layers,
+            "hidden_size": hidden_size,
+            "head_dim": head_dim,
+            "num_heads_q": num_heads_q,
+            "num_heads_kv": num_heads_kv,
+            "video_in_channels": video_in_ch,
+            "audio_in_channels": audio_in_ch,
+            "mm_layers": tuple(mm_layers),
+            "enable_attn_gating": (g_split_key in state_dict_keys or g_raw_key in state_dict_keys),
+        }
+
     if '{}input_blocks.0.0.weight'.format(key_prefix) not in state_dict_keys:
         return None
 

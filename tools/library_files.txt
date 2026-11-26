@@ -160,6 +160,13 @@ library dinkster_inference/ldm/lumina/controlnet.py
 library dinkster_inference/ldm/lumina/model.py
 library dinkster_inference/ldm/mage_flow/model.py
 library dinkster_inference/ldm/mage_flow/vae.py
+library dinkster_inference/ldm/magi2/__init__.py
+library dinkster_inference/ldm/magi2/common.py
+library dinkster_inference/ldm/magi2/moe.py
+library dinkster_inference/ldm/magi2/preview.py
+library dinkster_inference/ldm/magi2/refiner.py
+library dinkster_inference/ldm/magi2/sampling.py
+library dinkster_inference/ldm/magi2/turbo_vae.py
 library dinkster_inference/ldm/minimax/audio_vae.py
 library dinkster_inference/ldm/minimax/controlnet.py
 library dinkster_inference/ldm/minimax/latent_upscaler.py
@@ -335,6 +342,7 @@ library dinkster_inference/text_encoders/longcat_image.py
 library dinkster_inference/text_encoders/lt.py
 library dinkster_inference/text_encoders/lumina2.py
 library dinkster_inference/text_encoders/mage_flow.py
+library dinkster_inference/text_encoders/magi2.py
 library dinkster_inference/text_encoders/ming_image.py
 library dinkster_inference/text_encoders/minimax.py
 library dinkster_inference/text_encoders/minimax_music.py
@@ -432,6 +440,7 @@ tests tests-unit/dependencies_test.py
 tests tests-unit/library_files_test.py
 tests tests-unit/release_test.py
 tests tests-unit/requirements.txt
+tests tests-unit/test_magi2.py
 tests tests-unit/workflow_comparison_test.py
 tooling tools/adapted_upstream_tests.json
 tooling tools/check_dependencies.py
@@ -441,5 +450,6 @@ tooling tools/compare_workflows.py
 tooling tools/fork_differences.txt
 tooling tools/inference_release.py
 tooling tools/library_files.txt
+tooling tools/quantize_magi2.py
 tooling tools/regenerate_upstream_library.py
 tooling tools/rewrite_upstream_imports.py

@@ -5,5 +5,15 @@
 dinkster_inference/model_management.py
 # Safetensors files are recognized by their header when the file name has another extension.
 dinkster_inference/utils.py
+# Joint Wan 2.2 video + Oobleck audio latent format for MAGI-2.
+dinkster_inference/latent_formats.py
+# MAGI-2 Preview and Refiner BaseModel wrappers and spherical Zero-SNR DDPM refiner sampling.
+dinkster_inference/model_base.py
+# First-dimension-safe checkpoint signature detection for MAGI-2 Preview and Refiner.
+dinkster_inference/model_detection.py
+# MAGI-2 Qwen3.5-27B conditioning routing and TurboVAE decoder loading.
+dinkster_inference/sd.py
+# MAGI-2 Preview and Refiner model configurations and state-dict normalization.
+dinkster_inference/supported_models.py
 # The forward and LoRA cases also assert exact output values.
 tests-unit/comfy_quant/test_mixed_precision.py

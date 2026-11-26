@@ -3219,3 +3219,88 @@ class CogVideoX(BaseModel):
                 ofs = torch.full((noise.shape[0],), 2.0, device=noise.device, dtype=noise.dtype)
             out['ofs'] = dinkster_inference.conds.CONDRegular(ofs)
         return out
+
+
+class Magi2Preview(BaseModel):
+    def __init__(self, model_config, model_type=ModelType.FLOW, device=None, unet_model=None):
+        if unet_model is None:
+            import dinkster_inference.ldm.magi2.preview
+            unet_model = dinkster_inference.ldm.magi2.preview.Magi2PreviewModel
+        super().__init__(model_config, model_type, device=device, unet_model=unet_model)
+
+    def get_dynamic_vram__units(self):
+        return list(self.diffusion_model.block.layers), [self.diffusion_model.post_adapter]
+
+    def _transform_video_slice(self, latent, fn):
+        if latent.is_nested:
+            streams = latent.unbind()
+            return dinkster_inference.nested_tensor.NestedTensor(
+                [fn(streams[0])] + list(streams[1:])
+            )
+        if self.latent_shapes is not None and len(self.latent_shapes) > 1 and latent.ndim == 2:
+            unpacked = utils.unpack_latents(latent, self.latent_shapes)
+            packed, _ = utils.pack_latents([fn(unpacked[0])] + list(unpacked[1:]))
+            return packed
+        if latent.ndim == 5 and latent.shape[1] == self.diffusion_model.video_in_channels:
+            return fn(latent)
+        return latent
+
+    def process_latent_in(self, latent):
+        return self._transform_video_slice(latent, self.latent_format.process_video_in)
+
+    def process_latent_out(self, latent):
+        return self._transform_video_slice(latent, self.latent_format.process_video_out)
+
+    def extra_conds(self, **kwargs):
+        import dinkster_inference.ldm.magi2.common
+        out = super().extra_conds(**kwargs)
+        cross_attn = kwargs.get("cross_attn", None)
+        if cross_attn is not None:
+            out['c_crossattn'] = dinkster_inference.ldm.magi2.common.CONDMagi2CrossAttn(cross_attn)
+
+        latent_shapes = kwargs.get("latent_shapes", None)
+        if latent_shapes is not None and len(latent_shapes) > 1:
+            out['latent_shapes'] = dinkster_inference.conds.CONDConstant(latent_shapes)
+
+        payload = {}
+        txt_len = kwargs.get("magi2_txt_len", None)
+        if txt_len is not None:
+            payload["txt_lens"] = [int(txt_len)]
+        elif cross_attn is not None:
+            payload["txt_lens"] = [int(cross_attn.shape[1])]
+        else:
+            payload["txt_lens"] = [0]
+
+        ref_images = kwargs.get("magi2_ref_images", None)
+        if ref_images is not None:
+            norm_refs = []
+            for entry in ref_images:
+                lat = self.latent_format.process_video_in(entry["latent"].float())
+                norm_refs.append({**entry, "latent": lat})
+            payload["ref_images"] = [norm_refs]
+        else:
+            payload["ref_images"] = [[]]
+
+        if kwargs.get("magi2_refiner_include_audio", None) is not None:
+            payload["refiner_include_audio"] = bool(kwargs["magi2_refiner_include_audio"])
+
+        out['magi2_payload'] = dinkster_inference.ldm.magi2.common.CONDMagi2Payload(payload)
+        return out
+
+    def memory_required(self, input_shape, cond_shapes={}):
+        base = super().memory_required(input_shape, cond_shapes=cond_shapes)
+        # Account for 1 active MoE layer bank or 4-stream mHC workspace so VBAR leaves headroom
+        return max(base, 2048 * 1024 * 1024)
+
+
+class Magi2Refiner(Magi2Preview):
+    def __init__(self, model_config, model_type=ModelType.FLOW, device=None):
+        import dinkster_inference.ldm.magi2.refiner
+        import dinkster_inference.ldm.magi2.sampling
+        super().__init__(
+            model_config,
+            model_type,
+            device=device,
+            unet_model=dinkster_inference.ldm.magi2.refiner.Magi2RefinerModel,
+        )
+        self.model_sampling = dinkster_inference.ldm.magi2.sampling.Magi2RefinerModelSampling(model_config)

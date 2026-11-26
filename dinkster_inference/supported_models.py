@@ -2703,6 +2703,69 @@ class CogVideoX_Inpaint(CogVideoX_T2V):
         return out
 
 
+class Magi2Preview(supported_models_base.BASE):
+    unet_config = {
+        "image_model": "magi2_preview",
+    }
+
+    sampling_settings = {
+        "shift": 7.0,
+    }
+
+    unet_extra_config = {}
+    latent_format = latent_formats.Magi2AV
+    memory_usage_factor = 0.25
+    supported_inference_dtypes = [torch.bfloat16, torch.float32]
+
+    vae_key_prefix = ["vae."]
+    text_encoder_key_prefix = ["text_encoders."]
+
+    def get_model(self, state_dict, prefix="", device=None):
+        return model_base.Magi2Preview(self, device=device)
+
+    def process_unet_state_dict(self, state_dict):
+        import dinkster_inference.ldm.magi2.common
+        mm_layers = tuple(self.unet_config.get("mm_layers", (0, 1, 38, 39)))
+        head_dim = int(self.unet_config.get("head_dim", 128))
+        return dinkster_inference.ldm.magi2.common.normalize_magi2_state_dict(
+            state_dict, mm_layers=mm_layers, rope_dim=head_dim
+        )
+
+    def clip_target(self, state_dict={}):
+        pref = self.text_encoder_key_prefix[0]
+        detect = dinkster_inference.text_encoders.hunyuan_video.llama_detect(
+            state_dict, "{}qwen35_27b.transformer.".format(pref)
+        )
+        return supported_models_base.ClipTarget(
+            dinkster_inference.text_encoders.magi2.Magi2Tokenizer,
+            dinkster_inference.text_encoders.magi2.te(**detect),
+        )
+
+
+class Magi2Refiner(Magi2Preview):
+    unet_config = {
+        "image_model": "magi2_refiner",
+    }
+
+    sampling_settings = {
+        "shift": 5.0,
+        "refiner_noise_value": 220,
+    }
+
+    memory_usage_factor = 0.35
+
+    def get_model(self, state_dict, prefix="", device=None):
+        return model_base.Magi2Refiner(self, device=device)
+
+    def process_unet_state_dict(self, state_dict):
+        import dinkster_inference.ldm.magi2.common
+        mm_layers = tuple(self.unet_config.get("mm_layers", (0, 1, 28, 29)))
+        head_dim = int(self.unet_config.get("head_dim", 128))
+        return dinkster_inference.ldm.magi2.common.normalize_magi2_state_dict(
+            state_dict, mm_layers=mm_layers, rope_dim=head_dim
+        )
+
+
 models = [
     LotusD,
     Stable_Zero123,
@@ -2815,4 +2878,6 @@ models = [
     SVD_img2vid,
     Trellis2,
     DepthAnything3,
+    Magi2Preview,
+    Magi2Refiner,
 ]

@@ -1,0 +1,415 @@
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+
+from safetensors.torch import save_file
+import torch
+import torch.nn.functional as F
+import pytest
+
+import dinkster_inference.latent_formats
+import dinkster_inference.ldm.magi2.common as magi2_common
+import dinkster_inference.ldm.magi2.moe as magi2_moe
+import dinkster_inference.ldm.magi2.preview as magi2_preview
+import dinkster_inference.ldm.magi2.refiner as magi2_refiner
+import dinkster_inference.ldm.magi2.sampling as magi2_sampling
+import dinkster_inference.ldm.magi2.turbo_vae as magi2_turbo_vae
+import dinkster_inference.model_detection
+import dinkster_inference.ops
+import dinkster_inference.samplers
+import dinkster_inference.sd
+import dinkster_inference.text_encoders.magi2 as magi2_te
+from tools.quantize_magi2 import calibrate_fp8_input_scales, convert_and_quantize
+
+
+def test_swiglu7_clamping_and_bias_asymmetric():
+    # Interleaved [gate, up]: gate clamps only above +7.0 (not below -7.0), up clamps [-7.0, +7.0] and adds +1.0
+    x = torch.tensor([[-10.0, -10.0, 10.0, 10.0, 2.0, 0.0]], dtype=torch.bfloat16)
+    out = magi2_common.swiglu7(x, out_dtype=torch.float32)
+
+    # Pair 0: gate = -10.0 (unclamped below!), up = -7.0 -> (-10 * sigmoid(-17.02)) * (-7 + 1)
+    g0 = -10.0 * (1.0 / (1.0 + math.exp(17.02))) * (-6.0)
+    # Pair 1: gate = +7.0 (clamped), up = +7.0 (clamped) -> (7 * sigmoid(11.914)) * 8
+    g1 = 7.0 * (1.0 / (1.0 + math.exp(-7.0 * 1.702))) * 8.0
+    # Pair 2: gate = 2.0, up = 0.0 -> (2 * sigmoid(3.404)) * 1.0
+    g2 = 2.0 * (1.0 / (1.0 + math.exp(-3.404))) * 1.0
+    expected = torch.tensor([[g0, g1, g2]], dtype=torch.float32)
+    assert torch.allclose(out, expected, atol=1e-5, rtol=1e-5)
+
+
+def test_mhc_sinkhorn_doubly_stochastic_and_partial_rope():
+    torch.manual_seed(7)
+    logits = torch.randn(17, 4, 4, dtype=torch.float32) * 1.0
+    ds = magi2_preview._sinkhorn_knopp_fp32(logits, num_iters=20, eps=1e-12)
+    assert torch.allclose(ds.sum(dim=-1), torch.ones(17, 4), atol=1e-5)
+    assert torch.allclose(ds.sum(dim=-2), torch.ones(17, 4), atol=1e-4)
+
+    # Zero-SNR DDPM sigma endpoints and index 220 sanity check
+    sigmas = magi2_sampling.zero_snr_ddpm_sigmas(1000)
+    assert math.isclose(float(sigmas[0].item()), 0.9995749, rel_tol=1e-4)
+    assert float(sigmas[-1].item()) == 0.0
+    assert 0.80 < float(sigmas[220].item()) < 0.90
+
+    # Exact ODE integration check for FlowUniPC: on constant velocity v = x_init - target_x0,
+    # model(x, sigma) = x - sigma * v = target_x0 -> FlowUniPC must land on target_x0 to <1e-5!
+    torch.manual_seed(31)
+    x_init = torch.randn(2, 16)
+    target_x0 = torch.randn(2, 16)
+    f_sigmas = magi2_sampling.flow_unipc_sigmas(10, shift=7.0)
+    assert math.isclose(float(f_sigmas[0].item()), 7.0 * 0.999 / (1.0 + 6.0 * 0.999), rel_tol=1e-6)
+    assert float(f_sigmas[-1].item()) == 0.0
+    solved = magi2_sampling.sample_flow_unipc(lambda x_cur, _s: target_x0, x_init, f_sigmas)
+    assert torch.allclose(solved, target_x0, atol=1e-5)
+
+    # Partial 96/128 split-half RoPE: trailing 32 dims must stay bit-identical
+    rope_embed = magi2_common.ElementWiseFourierEmbed(128)
+    rope_embed.bands.copy_(magi2_common.default_rope_bands(128))
+    coords = magi2_common.get_coords((2, 3, 4), (2, 3, 4))
+    rope = rope_embed(coords)  # [24, 96]
+
+    q = torch.randn(1, 24, 6, 128, dtype=torch.float32)
+    k = torch.randn(1, 24, 6, 128, dtype=torch.float32)
+    q_rot, k_rot = magi2_common.apply_magi2_rope(q, k, rope)
+
+    assert torch.equal(q_rot[..., 96:], q[..., 96:])
+    assert torch.equal(k_rot[..., 96:], k[..., 96:])
+
+    # Independent reference split-half formula on [:96]
+    sin_e, cos_e = rope.tensor_split(2, dim=-1)
+    cos_rep = torch.cat((cos_e, cos_e), dim=-1).unsqueeze(0).unsqueeze(2)
+    sin_rep = torch.cat((sin_e, sin_e), dim=-1).unsqueeze(0).unsqueeze(2)
+    q1, q2 = q[..., :48], q[..., 48:96]
+    q_ref = torch.cat((torch.cat((-q2, q1), dim=-1) * sin_rep + q[..., :96] * cos_rep, q[..., 96:]), dim=-1)
+    assert torch.allclose(q_rot, q_ref, atol=1e-5)
+
+
+def test_moe_router_uses_bias_only_for_selection():
+    # Expert 0 has tiny raw score (logit -4 -> sigmoid ~0.018) + huge bias (+10.0)
+    # Expert 1 has high raw score (logit +4 -> sigmoid ~0.982) + zero bias
+    # Expert 2 has medium raw score (logit 0 -> sigmoid 0.5) + zero bias
+    # With top_k=2, experts {0, 1} must be selected, but normalized weights must come from UNBIASED scores!
+    logits = torch.tensor([[[ -4.0, 4.0, 0.0, -5.0 ]]], dtype=torch.float32)  # [H=1, S=1, E=4]
+    bias = torch.tensor([[10.0, 0.0, 0.0, 0.0]], dtype=torch.float32)
+    probs, idx = magi2_moe._compute_topk_routing(
+        logits, top_k=2, expert_bias=bias, score_func="sigmoid", route_norm=True, route_scale=4.9
+    )
+    chosen = set(idx.reshape(-1).tolist())
+    assert chosen == {0, 1}
+    s0 = 1.0 / (1.0 + math.exp(4.0))
+    s1 = 1.0 / (1.0 + math.exp(-4.0))
+    expected_map = {0: 4.9 * s0 / (s0 + s1), 1: 4.9 * s1 / (s0 + s1)}
+    for slot in range(2):
+        eid = int(idx[0, 0, slot].item())
+        assert math.isclose(float(probs[0, 0, slot].item()), expected_map[eid], rel_tol=1e-5)
+
+    if torch.cuda.is_available():
+        moe_ops = dinkster_inference.ops.mixed_precision_ops({}, torch.bfloat16)
+        moe = magi2_moe.CoreMultiHeadMoE(
+            hidden_size=128, num_heads=2, num_experts=4, top_k=2, expert_intermediate_size=128,
+            dtype=torch.bfloat16, device="cuda", moe_ops=moe_ops,
+        )
+        sd = {
+            "gate": torch.randn(8, 64, device="cuda", dtype=torch.float32) * 0.1,
+            "router.expert_bias": torch.randn(8, device="cuda", dtype=torch.float32) * 0.05,
+            "W_gate.weight": torch.randn(8, 128, 64, device="cuda", dtype=torch.bfloat16) * 0.05,
+            "W_up.weight": torch.randn(8, 128, 64, device="cuda", dtype=torch.bfloat16) * 0.05,
+            "W_down.weight": torch.randn(8, 64, 128, device="cuda", dtype=torch.bfloat16) * 0.05,
+        }
+        moe.load_state_dict(sd)
+        x_in = torch.randn(37, 128, device="cuda", dtype=torch.bfloat16)
+        out_fused = moe(x_in)
+        xh = x_in.view(37, 2, 64).contiguous()
+        tp, ti = moe._route(xh)
+        out_seq = moe._forward_sequential_banks_triton(xh, tp, ti).reshape(37, 128)
+        with moe.W_gate.bank_resident(x_in) as wg, moe.W_up.bank_resident(x_in) as wu, moe.W_down.bank_resident(x_in) as wd:
+            out_eager = moe._forward_eager(xh, tp, ti, wg, wu, wd).reshape(37, 128)
+        assert torch.allclose(out_fused.float(), out_eager.float(), atol=1e-2, rtol=1e-2)
+        assert torch.allclose(out_seq.float(), out_eager.float(), atol=1e-2, rtol=1e-2)
+
+
+def test_refiner_window_attention_matches_explicit_3d_block_mask():
+    # Non-multiple T=15 (blocks of 8 -> [8, 7]), H=24 (6 blocks of 4), W=24 (6 blocks of 4)
+    # Since 6 > 5 (2*radius + 1), boundary blocks must NOT attend to opposite-corner blocks!
+    torch.manual_seed(11)
+    t_num, h_num, w_num = 15, 24, 24
+    bs = (8, 4, 4)
+    radius = (2, 2, 2)
+    tail_len = 5
+    vid_tokens = t_num * h_num * w_num
+    total_tokens = vid_tokens + tail_len
+
+    _, _, block_ranges, grid_shape = magi2_refiner._build_refiner_block_order(
+        (t_num, h_num, w_num), bs, total_tokens, torch.device("cpu")
+    )
+    q = torch.randn(1, 4, total_tokens, 32, dtype=torch.float32)
+    k = torch.randn(1, 2, total_tokens, 32, dtype=torch.float32)
+    v = torch.randn(1, 2, total_tokens, 32, dtype=torch.float32)
+
+    out_win = magi2_refiner._window_attention_eager(
+        q, k, v, block_ranges, grid_shape, radius, vid_tokens
+    )
+
+    # Independent dense boolean attention mask over [total_tokens, total_tokens]
+    nt, nh, nw = grid_shape
+    allow = torch.zeros((total_tokens, total_tokens), dtype=torch.bool)
+    allow[vid_tokens:, :] = True
+    allow[:, vid_tokens:] = True
+    ranges = block_ranges.tolist()
+    for qt in range(nt):
+        for qh in range(nh):
+            for qw in range(nw):
+                qb = qt * (nh * nw) + qh * nw + qw
+                qs, qe = ranges[qb]
+                for kt in range(max(0, qt - 2), min(nt, qt + 3)):
+                    for kh in range(max(0, qh - 2), min(nh, qh + 3)):
+                        for kw in range(max(0, qw - 2), min(nw, qw + 3)):
+                            kb = kt * (nh * nw) + kh * nw + kw
+                            ks, ke = ranges[kb]
+                            allow[qs:qe, ks:ke] = True
+    # Confirm window actually excludes distant blocks
+    assert not bool(allow.all())
+    out_ref = F.scaled_dot_product_attention(q, k, v, attn_mask=allow, enable_gqa=True).transpose(1, 2)
+    assert torch.allclose(out_win, out_ref, atol=1e-5)
+
+
+def test_magi2_tokenizer_cjk_split_json_markdown_and_figure_span():
+    tok = magi2_te.Magi2Tokenizer()
+    structured = {
+        "global_layer": {
+            "context": "studio",
+            "description": "A person greets the camera in Chinese: \u4f60\u597d\u4e16\u754c",
+        }
+    }
+    tokens = tok.tokenize_with_weights(json.dumps(structured, ensure_ascii=False), magi2_figure_ids=[1])
+    assert tokens["magi2_txt_len"] > 0
+    span = tokens["magi2_figure_spans"][1]
+    assert len(span) >= 3  # `<Figure 1>` spans multiple BPE tokens
+
+
+def _make_raw_sandai_preview_sd(hidden_size: int = 128, num_heads_q: int = 2, head_dim: int = 64) -> dict[str, torch.Tensor]:
+    """Synthesize a miniature raw upstream SandAI MAGI-2 Preview checkpoint (unsplit mm + untransposed MoE)."""
+    torch.manual_seed(123)
+    ref = magi2_preview.Magi2PreviewModel(
+        num_layers=4,
+        hidden_size=hidden_size,
+        head_dim=head_dim,
+        num_heads_q=num_heads_q,
+        num_heads_kv=num_heads_q,
+        video_in_channels=48,
+        audio_in_channels=64,
+        text_in_channels=5120,
+        intermediate_factor=4,
+        mm_layers=(0, 3),
+        moe_layers=(1, 2),
+        num_stream=4,
+        moe_num_heads=2,
+        moe_num_experts=4,
+        moe_top_k=2,
+        moe_intermediate_size=128,
+        dtype=torch.bfloat16,
+        device="cpu",
+        operations=dinkster_inference.ops.manual_cast,
+    )
+    norm_sd = {}
+    for k, v in ref.state_dict().items():
+        if k == "pre_adapter.rope.bands":
+            norm_sd[k] = magi2_common.default_rope_bands(head_dim)
+        elif "norm" in k or "sinks" in k or "mhc_bias" in k:
+            norm_sd[k] = torch.randn_like(v, dtype=torch.float32) * 0.05
+        elif "mhc_alpha" in k:
+            norm_sd[k] = torch.full_like(v, 0.01, dtype=torch.float32)
+        else:
+            norm_sd[k] = (torch.randn_like(v, dtype=torch.float32) * 0.02).to(v.dtype if v.is_floating_point() else torch.bfloat16)
+
+    # Convert back to raw SandAI disk format to test full conversion + auto-normalization!
+    raw_sd: dict[str, torch.Tensor] = {}
+    grouped_buckets: dict[str, list[tuple[int, torch.Tensor]]] = {}
+    for k, v in norm_sd.items():
+        if ".linears." in k:
+            pre, rest = k.split(".linears.", 1)
+            idx_str, param = rest.split(".", 1)
+            grouped_buckets.setdefault(f"{pre}.{param}", []).append((int(idx_str), v))
+        elif k.endswith((".moe_mlp.W_gate.weight", ".moe_mlp.W_up.weight", ".moe_mlp.W_down.weight")):
+            raw_key = k[: -len(".weight")]
+            raw_sd[raw_key] = v.transpose(1, 2).contiguous().to(torch.bfloat16)
+        elif k.endswith(".moe_mlp.router.expert_bias"):
+            # Put garbage in raw expert_bias and true bias in expert_bias_ema!
+            raw_sd[k] = torch.full_like(v, -999.0)
+            raw_sd[f"{k}_ema"] = v.clone()
+        else:
+            raw_sd[k] = v
+
+    for gk, indexed in grouped_buckets.items():
+        indexed.sort(key=lambda iv: iv[0])
+        raw_sd[gk] = torch.cat([t for _, t in indexed], dim=0).contiguous()
+
+    # MoEExperts.weight starts as None until loaded; populate raw SandAI [E, in, out] MoE banks!
+    d_head = hidden_size // 2
+    for m_layer in (1, 2):
+        pref = f"block.layers.{m_layer}.mlp.moe_mlp"
+        raw_sd[f"{pref}.W_gate"] = (torch.randn(8, d_head, 128) * 0.02).to(torch.bfloat16)
+        raw_sd[f"{pref}.W_up"] = (torch.randn(8, d_head, 128) * 0.02).to(torch.bfloat16)
+        raw_sd[f"{pref}.W_down"] = (torch.randn(8, 128, d_head) * 0.02).to(torch.bfloat16)
+    return raw_sd
+
+
+def _make_raw_sandai_refiner_sd() -> dict[str, torch.Tensor]:
+    """Miniature Refiner with hidden_size=192 -> intermediate_size=504 (`504 % 16 == 8`!) to exercise NVFP4 pad_16x and INT8 gs=4."""
+    torch.manual_seed(456)
+    ref = magi2_refiner.Magi2RefinerModel(
+        num_layers=4,
+        hidden_size=192,
+        head_dim=64,
+        num_heads_q=3,
+        num_heads_kv=1,
+        video_in_channels=48,
+        audio_in_channels=64,
+        text_in_channels=5120,
+        mm_layers=(0, 3),
+        dtype=torch.bfloat16,
+        device="cpu",
+        operations=dinkster_inference.ops.manual_cast,
+    )
+    raw_sd: dict[str, torch.Tensor] = {}
+    grouped_buckets: dict[str, list[tuple[int, torch.Tensor]]] = {}
+    for k, v in ref.state_dict().items():
+        if k == "pre_adapter.rope.bands":
+            t = magi2_common.default_rope_bands(64)
+        elif "norm" in k:
+            t = torch.randn_like(v, dtype=torch.float32) * 0.05
+        else:
+            t = (torch.randn_like(v, dtype=torch.float32) * 0.02).to(v.dtype)
+        if ".linears." in k:
+            pre, rest = k.split(".linears.", 1)
+            idx_str, param = rest.split(".", 1)
+            grouped_buckets.setdefault(f"{pre}.{param}", []).append((int(idx_str), t))
+        else:
+            raw_sd[k] = t
+    for gk, indexed in grouped_buckets.items():
+        indexed.sort(key=lambda iv: iv[0])
+        raw_sd[gk] = torch.cat([t for _, t in indexed], dim=0).contiguous()
+    return raw_sd
+
+
+@pytest.mark.parametrize("kind", ["preview", "refiner"])
+def test_magi2_end_to_end_loader_ksampler_and_quantization(tmp_path: Path, kind: str):
+    raw_dir = tmp_path / f"raw_{kind}"
+    raw_dir.mkdir()
+    raw_sd = _make_raw_sandai_preview_sd() if kind == "preview" else _make_raw_sandai_refiner_sd()
+    # Embed text_in_channels=64 test override only via pre_adapter.text_embedder shape? Note model_detection uses default 5120 unless detected;
+    # let's make text_in_channels=5120 on tiny preview/refiner or detect text_in_channels!
+    save_file(raw_sd, str(raw_dir / "model.safetensors"))
+
+    bf16_file = tmp_path / f"{kind}_bf16.safetensors"
+    convert_and_quantize(raw_dir, bf16_file, model_kind=kind, fmt="bf16", device_str="cpu")
+    assert bf16_file.exists()
+
+    # Verify streaming multi-part merge path too by forcing small flush threshold
+    formats = ["bf16", "int8", "fp8"]
+    if torch.cuda.is_available():
+        formats.append("nvfp4")
+
+    outputs_by_fmt: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+    for fmt in formats:
+        out_file = bf16_file if fmt == "bf16" else (tmp_path / f"{kind}_{fmt}.safetensors")
+        scales_path = None
+        if fmt == "fp8" and "bf16" in outputs_by_fmt:
+            patcher_cal = dinkster_inference.sd.load_diffusion_model(str(bf16_file))
+            dev = patcher_cal.load_device
+            dt = patcher_cal.model.get_dtype_inference()
+            dinkster_inference.model_management.load_models_gpu([patcher_cal])
+            v_c = torch.randn(1, 48, 2, 4, 4, device=dev, dtype=dt)
+            a_c = torch.randn(1, 64, 6, device=dev, dtype=dt)
+            ctx_c = torch.randn(1, 5, patcher_cal.model.diffusion_model.text_in_channels, device=dev, dtype=dt)
+            scales = calibrate_fp8_input_scales(
+                patcher_cal,
+                [([v_c, a_c], torch.tensor([500.0], device=dev), ctx_c, {"txt_lens": [5]})],
+            )
+            assert len(scales) > 0
+            scales_path = tmp_path / f"{kind}_fp8_scales.json"
+            scales_path.write_text(json.dumps(scales))
+
+        if fmt != "bf16":
+            convert_and_quantize(
+                raw_dir,
+                out_file,
+                model_kind=kind,
+                fmt=fmt,
+                device_str="cuda" if torch.cuda.is_available() else "cpu",
+                input_scales_path=scales_path,
+            )
+
+        patcher = dinkster_inference.sd.load_diffusion_model(str(out_file))
+        dyn_units, last_units = patcher.model.get_dynamic_vram__units()
+        assert len(dyn_units) == 4 and len(last_units) == 1
+
+        text_dim = patcher.model.diffusion_model.text_in_channels
+        torch.manual_seed(99)
+        pos_ctx = torch.randn(1, 7, text_dim)
+        neg_ctx = torch.randn(1, 3, text_dim)  # Different length to test CONDMagi2CrossAttn batching!
+        ref_lat = torch.randn(1, 48, 1, 4, 4)
+        ref_tok = torch.randn(text_dim)
+
+        positive = [[pos_ctx, {"magi2_txt_len": 7, "magi2_ref_images": [{"latent": ref_lat, "special_token": ref_tok}]}]]
+        negative = [[neg_ctx, {"magi2_txt_len": 3, "magi2_ref_images": [{"latent": torch.zeros_like(ref_lat), "special_token": ref_tok}]}]]
+
+        v_init = torch.zeros(1, 48, 2, 4, 4)
+        a_init = torch.zeros(1, 64, 6)
+        latent_av = dinkster_inference.nested_tensor.NestedTensor((v_init, a_init))
+        torch.manual_seed(2026)
+        noise_av = dinkster_inference.nested_tensor.NestedTensor(
+            (torch.randn_like(v_init), torch.randn_like(a_init))
+        )
+
+        sampler = dinkster_inference.samplers.KSAMPLER(magi2_sampling.sample_flow_unipc)
+        sigmas = magi2_sampling.flow_unipc_sigmas(3, shift=7.0 if kind == "preview" else 5.0)
+        sampled = dinkster_inference.samplers.sample(
+            patcher,
+            noise_av,
+            positive,
+            negative,
+            cfg=3.0,
+            device=patcher.load_device,
+            sampler=sampler,
+            sigmas=sigmas,
+            latent_image=latent_av,
+            disable_pbar=True,
+            seed=42,
+        )
+        v_out, a_out = sampled.unbind()
+        assert v_out.shape == v_init.shape
+        assert a_out.shape == a_init.shape
+        assert torch.isfinite(v_out).all()
+        assert torch.isfinite(a_out).all()
+        outputs_by_fmt[fmt] = (v_out.detach().cpu().float(), a_out.detach().cpu().float())
+
+    v_ref, _ = outputs_by_fmt["bf16"]
+    for fmt, (v_q, _) in outputs_by_fmt.items():
+        if fmt == "bf16":
+            continue
+        cos = F.cosine_similarity(v_ref.flatten(), v_q.flatten(), dim=0).item()
+        assert cos > 0.95, f"{kind} {fmt} cosine similarity too low: {cos}"
+
+
+def test_magi2_turbo_vae_detection_and_sliding_decode():
+    cfg = {
+        "latent_channels": 48,
+        "out_channels": 3,
+        "decoder_block_out_channels": [32, 32, 64, 64],
+        "decoder_layers_per_block": [1, 1, 1, 1, 1],
+        "decoder_spatio_temporal_scaling": [True, True, True, False],
+        "decoder_spatio_only": [False, True, False, False],
+        "patch_size": 2,
+        "first_chunk_size": 3,
+        "step_size": 5,
+    }
+    dec = magi2_turbo_vae.Magi2TurboVAEDecoder(**cfg)
+    sd = {k: torch.randn_like(v) * 0.02 for k, v in dec.state_dict().items()}
+    vae = dinkster_inference.sd.VAE(sd=sd, metadata={"config": json.dumps(cfg)}, device=torch.device("cpu"), dtype=torch.float32)
+    z = torch.randn(1, 48, 9, 4, 4)  # 9 frames -> exercises 2 sliding chunks + padding removal!
+    pixels = vae.decode(z)
+    # 9 Wan2.2 latent frames -> 9 * 4 - 3 = 33 pixel frames, 4 * 16 = 64x64 spatial
+    assert pixels.shape == (1, 33, 64, 64, 3)
+    assert torch.isfinite(pixels).all()

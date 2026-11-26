@@ -1178,3 +1178,56 @@ class CogVideoX1_5(CogVideoX):
     """
     def __init__(self):
         self.scale_factor = 0.7
+
+
+class Magi2AV(Wan22):
+    """Joint Wan 2.2 48-channel video + Oobleck 64-channel audio latent format for MAGI-2."""
+
+    latent_channels = 64
+
+    def __init__(self):
+        w22 = Wan22()
+        self.scale_factor = w22.scale_factor
+        self.taesd_decoder_name = w22.taesd_decoder_name
+        self.latents_mean = w22.latents_mean
+        self.latents_std = w22.latents_std
+
+    def process_video_in(self, video):
+        mean = self.latents_mean.to(video.device, video.dtype)
+        std = self.latents_std.to(video.device, video.dtype)
+        return (video - mean) * self.scale_factor / std
+
+    def process_video_out(self, video):
+        mean = self.latents_mean.to(video.device, video.dtype)
+        std = self.latents_std.to(video.device, video.dtype)
+        return video * std / self.scale_factor + mean
+
+    def process_in(self, latent):
+        if latent.is_nested:
+            streams = latent.unbind()
+            return dinkster_inference.nested_tensor.NestedTensor(
+                (self.process_video_in(streams[0]),) + tuple(streams[1:])
+            )
+        if latent.ndim == 5 and latent.shape[1] == Wan22.latent_channels:
+            return self.process_video_in(latent)
+        return latent
+
+    def process_out(self, latent):
+        if latent.is_nested:
+            streams = latent.unbind()
+            return dinkster_inference.nested_tensor.NestedTensor(
+                (self.process_video_out(streams[0]),) + tuple(streams[1:])
+            )
+        if latent.ndim == 5 and latent.shape[1] == Wan22.latent_channels:
+            return self.process_video_out(latent)
+        return latent
+
+    def fix_empty_latent(self, latent):
+        video_ch = Wan22.latent_channels
+        audio_ch = 64
+        video = latent[:, :video_ch].clone()
+        # Preview runs at 12.5 video latent fps -> 8 latent frames per second -> 25 audio latents/s
+        seconds = max(1, video.shape[2]) * 8.0 / 25.0
+        audio_t = max(1, round(seconds * 25.0))
+        audio = latent.new_zeros((latent.shape[0], audio_ch, audio_t))
+        return dinkster_inference.nested_tensor.NestedTensor((video, audio))

@@ -18,6 +18,8 @@ import dinkster_inference.ldm.wan.vae
 import dinkster_inference.ldm.trellis2.vae
 import dinkster_inference.ldm.wan.vae2_2
 import dinkster_inference.ldm.wan.model_vsr
+import dinkster_inference.ldm.magi2.turbo_vae
+import dinkster_inference.text_encoders.magi2
 import dinkster_inference.ldm.hunyuan3d.vae
 import dinkster_inference.ldm.seedvr.vae
 import dinkster_inference.ldm.mage_flow.vae
@@ -505,8 +507,18 @@ class VAE:
         if no_init:
             return
         fast_disk = dinkster_inference.storage.state_dict_fast_disk(sd)
+        if "conv_in.conv.weight" in sd and (
+            "mid_block.resnets.0.conv1.conv.weight" in sd
+            or "mid_block.resnets.0.norm1.weight" in sd
+        ):
+            sd = dinkster_inference.utils.state_dict_prefix_replace(sd, {"": "decoder."})
         is_seedvr2_vae = "decoder.up_blocks.2.upsamplers.0.upscale_conv.weight" in sd
-        if not is_seedvr2_vae and 'decoder.up_blocks.0.resnets.0.norm1.weight' in sd.keys(): #diffusers format
+        is_magi2_turbo_vae = (
+            "decoder.conv_in.conv.weight" in sd
+            and "decoder.mid_block.resnets.0.conv1.conv.weight" in sd
+            and "decoder.mid_block.resnets.0.norm1.norm_layer.weight" not in sd
+        )
+        if not is_seedvr2_vae and not is_magi2_turbo_vae and 'decoder.up_blocks.0.resnets.0.norm1.weight' in sd.keys(): #diffusers format
             sd = diffusers_convert.convert_vae_state_dict(sd)
 
         if model_management.is_amd():
@@ -808,6 +820,19 @@ class VAE:
 
                 self.memory_used_encode = lambda shape, dtype: (1400 * 9 * shape[-2] * shape[-1]) * model_management.dtype_size(dtype)
                 self.memory_used_decode = lambda shape, dtype: (3600 * 4 * shape[-2] * shape[-1] * 16 * 16) * model_management.dtype_size(dtype)
+            elif is_magi2_turbo_vae:  # MAGI-2 TurboVAE Wan 2.2 distilled decoder
+                cfg = json.loads(metadata["config"]) if metadata and "config" in metadata else {}
+                cfg.setdefault("elementwise_affine", "decoder.mid_block.resnets.0.norm1.weight" in sd)
+                self.upscale_ratio = (lambda a: max(0, a * 4 - 3), 16, 16)
+                self.upscale_index_formula = (4, 16, 16)
+                self.downscale_ratio = (lambda a: max(0, math.floor((a + 3) / 4)), 16, 16)
+                self.downscale_index_formula = (4, 16, 16)
+                self.latent_dim = 3
+                self.latent_channels = int(cfg.get("latent_channels", sd["decoder.conv_in.conv.weight"].shape[1]))
+                self.first_stage_model = dinkster_inference.ldm.magi2.turbo_vae.Magi2TurboVAEDecoder(**cfg)
+                self.working_dtypes = [torch.bfloat16, torch.float16, torch.float32]
+                self.memory_used_encode = lambda shape, dtype: 0
+                self.memory_used_decode = lambda shape, dtype: 5000 * shape[3] * shape[4] * (16 * 16) * model_management.dtype_size(dtype)
             elif "decoder.conv_in.conv.weight" in sd and "decoder.mid_block.resnets.0.norm1.norm_layer.weight" in sd:  # CogVideoX VAE
                 self.upscale_ratio = (lambda a: max(0, a * 4 - 3), 8, 8)
                 self.upscale_index_formula = (4, 8, 8)
@@ -1713,6 +1738,7 @@ class CLIPType(Enum):
     MOSS_IMAGE = 38
     FIBO2 = 39
     PAN2 = 40
+    MAGI2 = 41
 
 
 
@@ -2087,6 +2113,10 @@ def load_text_encoder_state_dicts(state_dicts=[], embedding_directory=None, clip
             elif clip_type == CLIPType.PAN2 and te_model == TEModel.QWEN35_9B:  # PAN 2: stock Qwen3.5-9B, layer 30 of 32, the caption span after the system turn.
                 clip_target.clip = dinkster_inference.text_encoders.pan2.te(**llama_detect(clip_data), mtp="mtp.fc.weight" in clip_data[0])
                 clip_target.tokenizer = dinkster_inference.text_encoders.pan2.PAN2Tokenizer
+            elif clip_type == CLIPType.MAGI2 and te_model == TEModel.QWEN35_27B:  # MAGI-2: stock Qwen3.5-27B, layer 62 of 64 unnormed, isolated CJK split, no chat template.
+                clip_target.clip = dinkster_inference.text_encoders.magi2.te(**llama_detect(clip_data), mtp="mtp.fc.weight" in clip_data[0],
+                    vocab_size=clip_data[0]["model.embed_tokens.weight"].shape[0], tokenizer_json=tokenizer_data.get("qwen35_27b_tokenizer_json"))
+                clip_target.tokenizer = dinkster_inference.text_encoders.magi2.Magi2Tokenizer
             else:
                 qwen35_type = {TEModel.QWEN35_08B: "qwen35_08b", TEModel.QWEN35_2B: "qwen35_2b", TEModel.QWEN35_4B: "qwen35_4b", TEModel.QWEN35_9B: "qwen35_9b", TEModel.QWEN35_27B: "qwen35_27b"}[te_model]
                 clip_target.clip = dinkster_inference.text_encoders.qwen35.te(**llama_detect(clip_data), model_type=qwen35_type, mtp="mtp.fc.weight" in clip_data[0],
