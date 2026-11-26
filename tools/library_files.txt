@@ -426,6 +426,7 @@ tests tests-unit/comfy_test/test_seedvr2_dtype.py
 tests tests-unit/comfy_test/test_seedvr2_internals.py
 tests tests-unit/comfy_test/test_seedvr2_vae_tiled.py
 tests tests-unit/comfy_test/upstream_sync_test.py
+tests tests-unit/comfy_test/vbar_cast_failure_test.py
 tests tests-unit/comfy_test/writable_weights_cuda.py
 tests tests-unit/dependencies_test.py
 tests tests-unit/library_files_test.py
