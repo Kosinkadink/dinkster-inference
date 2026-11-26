@@ -71,30 +71,34 @@ def letterbox_reference_image(
         raise ValueError(f"Invalid reference image dimensions: {src_h}x{src_w}")
 
     if resize_type == "square":
-        canvas_h, canvas_w = 320, 320
+        raw_h, raw_w = 320, 320
     else:
         max_side = max(target_height, target_width)
         if src_w > src_h:
-            canvas_w = max_side
-            canvas_h = int(src_h * max_side / src_w)
+            raw_w = max_side
+            raw_h = max(1, int(src_h * max_side / src_w))
         else:
-            canvas_h = max_side
-            canvas_w = int(src_w * max_side / src_h)
+            raw_h = max_side
+            raw_w = max(1, int(src_w * max_side / src_h))
 
-    canvas_h = max(vae_scale_factor, (canvas_h // vae_scale_factor) * vae_scale_factor)
-    canvas_w = max(vae_scale_factor, (canvas_w // vae_scale_factor) * vae_scale_factor)
-
-    scale = min(canvas_w / src_w, canvas_h / src_h)
+    scale = min(raw_w / src_w, raw_h / src_h)
     fit_h = max(1, int(round(src_h * scale)))
     fit_w = max(1, int(round(src_w * scale)))
 
     resized = F.interpolate(
         img.movedim(-1, 1), size=(fit_h, fit_w), mode="bicubic", align_corners=False
     ).clamp(0.0, 1.0)
-    canvas = torch.ones((1, 3, canvas_h, canvas_w), device=img.device, dtype=torch.float32)
-    top = (canvas_h - fit_h) // 2
-    left = (canvas_w - fit_w) // 2
+    canvas = torch.ones((1, 3, raw_h, raw_w), device=img.device, dtype=torch.float32)
+    top = (raw_h - fit_h) // 2
+    left = (raw_w - fit_w) // 2
     canvas[:, :, top : top + fit_h, left : left + fit_w] = resized
+
+    aligned_h = max(vae_scale_factor, (raw_h // vae_scale_factor) * vae_scale_factor)
+    aligned_w = max(vae_scale_factor, (raw_w // vae_scale_factor) * vae_scale_factor)
+    if (aligned_h, aligned_w) != (raw_h, raw_w):
+        canvas = F.interpolate(
+            canvas, size=(aligned_h, aligned_w), mode="bilinear", align_corners=False
+        ).clamp(0.0, 1.0)
     return canvas.movedim(1, -1).contiguous()
 
 

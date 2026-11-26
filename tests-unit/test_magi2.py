@@ -413,3 +413,19 @@ def test_magi2_turbo_vae_detection_and_sliding_decode():
     # 9 Wan2.2 latent frames -> 9 * 4 - 3 = 33 pixel frames, 4 * 16 = 64x64 spatial
     assert pixels.shape == (1, 33, 64, 64, 3)
     assert torch.isfinite(pixels).all()
+
+
+def test_magi2_letterbox_reference_image_matches_upstream_resizepad_order():
+    # A 16:9 (1920x1080 -> scaled 192x108) dark reference image at 512x896 has raw_w=896, raw_h=504
+    # (exact 16:9 fit -> zero white bars in resizepad), then aligns to (480, 896) without adding white side bars.
+    dark_16_9 = torch.full((1, 108, 192, 3), 0.15, dtype=torch.float32)
+    keep_out = magi2_sampling.letterbox_reference_image(dark_16_9, 512, 896, resize_type="keep_ratio")
+    assert keep_out.shape == (1, 480, 896, 3)
+    assert keep_out[:, :, 0, :].max().item() < 0.25
+    assert keep_out[:, :, -1, :].max().item() < 0.25
+
+    square_out = magi2_sampling.letterbox_reference_image(dark_16_9, 512, 896, resize_type="square")
+    assert square_out.shape == (1, 320, 320, 3)
+    assert torch.allclose(square_out[:, 0, :, :], torch.ones_like(square_out[:, 0, :, :]))
+    assert square_out[:, 160, 160, :].max().item() < 0.25
+
