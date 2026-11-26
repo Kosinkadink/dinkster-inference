@@ -264,7 +264,7 @@ class MultiModalityLinear(nn.Module):
             if part.shape[0] == 0:
                 outputs.append(part.new_empty((0, self.out_features)))
             else:
-                outputs.append(self.linears[idx](part))
+                outputs.append(_linear_chunked(self.linears[idx], part))
         return modality_dispatcher.undispatch(outputs)
 
 
@@ -292,6 +292,20 @@ def make_modality_linear(
     )
 
 
+def _linear_chunked(module: nn.Module, x: torch.Tensor, chunk_tokens: int = 65536) -> torch.Tensor:
+    n = x.shape[0]
+    if n <= chunk_tokens:
+        return module(x)
+    first = module(x[:chunk_tokens])
+    out = first.new_empty((n, first.shape[-1]))
+    out[:chunk_tokens] = first
+    del first
+    for start in range(chunk_tokens, n, chunk_tokens):
+        end = min(n, start + chunk_tokens)
+        out[start:end] = module(x[start:end])
+    return out
+
+
 def apply_modality_linear(
     module: nn.Module,
     x: torch.Tensor,
@@ -301,7 +315,7 @@ def apply_modality_linear(
         if modality_dispatcher is None:
             raise ValueError("modality_dispatcher is required for MultiModalityLinear")
         return module(x, modality_dispatcher)
-    return module(x)
+    return _linear_chunked(module, x)
 
 
 def _is_stacked_mm_linear_key(key: str, mm_layers: set[int]) -> bool:

@@ -327,28 +327,32 @@ class RefinerAttention(nn.Module):
     ) -> torch.Tensor:
         compute_dtype = hidden_states.dtype
         x = self.pre_norm(hidden_states, modality_dispatcher=modality_dispatcher).to(compute_dtype)
-        qkv = apply_modality_linear(self.linear_qkv, x, modality_dispatcher).float()
-        q, k, v = torch.split(qkv, (self.q_size, self.kv_size, self.kv_size), dim=-1)
-        q = self.q_norm(
-            q.view(-1, self.num_heads_q, self.head_dim), modality_dispatcher=modality_dispatcher
-        )
-        k = self.k_norm(
-            k.view(-1, self.num_heads_kv, self.head_dim), modality_dispatcher=modality_dispatcher
-        )
-        v = v.view(-1, self.num_heads_kv, self.head_dim)
-
         g = None
         if self.linear_g is not None:
             g = apply_modality_linear(self.linear_g, x, modality_dispatcher).float().unsqueeze(-1)
+        qkv = apply_modality_linear(self.linear_qkv, x, modality_dispatcher).float()
+        del x
+        q, k, v = torch.split(qkv, (self.q_size, self.kv_size, self.kv_size), dim=-1)
+        q_normed = self.q_norm(
+            q.view(-1, self.num_heads_q, self.head_dim), modality_dispatcher=modality_dispatcher
+        )
+        k_normed = self.k_norm(
+            k.view(-1, self.num_heads_kv, self.head_dim), modality_dispatcher=modality_dispatcher
+        )
+        v_unperm = modality_dispatcher.inv_permute(
+            v.view(-1, self.num_heads_kv, self.head_dim).to(compute_dtype)
+        )
+        del qkv, q, k, v
 
-        q_unperm = modality_dispatcher.inv_permute(q).unsqueeze(0)
-        k_unperm = modality_dispatcher.inv_permute(k).unsqueeze(0)
-        v_unperm = modality_dispatcher.inv_permute(v)
+        q_unperm = modality_dispatcher.inv_permute(q_normed).unsqueeze(0)
+        del q_normed
+        k_unperm = modality_dispatcher.inv_permute(k_normed).unsqueeze(0)
+        del k_normed
 
         q_rot, k_rot = apply_magi2_rope(q_unperm, k_unperm, rope)
+        del q_unperm, k_unperm
         q_rot = q_rot.squeeze(0).to(compute_dtype)
         k_rot = k_rot.squeeze(0).to(compute_dtype)
-        v_unperm = v_unperm.to(compute_dtype)
 
         seq_lens = [p["seq_len"] for p in attn_plans]
         q_parts = torch.split(q_rot, seq_lens, dim=0)
@@ -387,19 +391,25 @@ class RefinerAttention(nn.Module):
                         q_pad, k_pad, v_pad, block_mask=fp["block_mask"], enable_gqa=enable_gqa
                     )
                     out_b = out_pad[:, :, slots, :].transpose(1, 2).contiguous()
+                    del out_pad
                 except Exception:
                     out_b = _window_attention_eager(
                         q_bhld, k_bhld, v_bhld,
                         plan["block_ranges"], plan["grid_shape"], plan["radius"], plan["video_tokens"]
                     )
+                del q_pad, k_pad, v_pad
             else:
                 out_b = _window_attention_eager(
                     q_bhld, k_bhld, v_bhld,
                     plan["block_ranges"], plan["grid_shape"], plan["radius"], plan["video_tokens"]
                 )
+            del q_bhld, k_bhld, v_bhld
             out_parts.append(out_b.squeeze(0))
+            del out_b
 
+        del q_parts, k_parts, v_parts, q_rot, k_rot, v_unperm
         attn_out = modality_dispatcher.permute(torch.cat(out_parts, dim=0))
+        del out_parts
         if g is not None:
             attn_out = attn_out * torch.sigmoid(g).to(attn_out.dtype)
         attn_out = attn_out.reshape(-1, self.q_size).to(compute_dtype)
