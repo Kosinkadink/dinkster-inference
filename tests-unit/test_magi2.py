@@ -547,3 +547,73 @@ def test_flow_unipc_supports_nested_tensor():
     t_v, t_a = nt_target.unbind()
     assert torch.allclose(s_v, t_v, atol=1e-5)
     assert torch.allclose(s_a, t_a, atol=1e-5)
+
+
+def test_magi2_core_moe_int8_full_precision_mm():
+    from comfy_kitchen.tensor import QuantizedTensor, TensorWiseINT8Layout
+
+    devices = [torch.device("cpu")]
+    if torch.cuda.is_available():
+        devices.append(torch.device("cuda"))
+
+    for dev in devices:
+        dt = torch.bfloat16 if dev.type == "cuda" else torch.float32
+        d_head, d_exp = (64, 64) if dev.type == "cuda" else (16, 16)
+        ops = dinkster_inference.ops.mixed_precision_ops({}, dt)
+        moe = dinkster_inference.ldm.magi2.moe.CoreMultiHeadMoE(
+            hidden_size=d_head * 2,
+            num_heads=2,
+            num_experts=4,
+            top_k=2,
+            expert_intermediate_size=d_exp,
+            dtype=dt,
+            device=dev,
+            moe_ops=ops,
+        )
+        torch.manual_seed(123)
+        sd_ref = {
+            "gate": torch.randn(8, d_head, device=dev, dtype=torch.float32) * 0.2,
+            "router.expert_bias": torch.zeros(8, device=dev, dtype=torch.float32),
+            "W_gate.weight": torch.randn(8, d_exp, d_head, device=dev, dtype=dt) * 0.2,
+            "W_up.weight": torch.randn(8, d_exp, d_head, device=dev, dtype=dt) * 0.2,
+            "W_down.weight": torch.randn(8, d_head, d_exp, device=dev, dtype=dt) * 0.2,
+        }
+        moe.load_state_dict(sd_ref)
+        x = torch.randn(11, d_head * 2, device=dev, dtype=dt)
+        expected = moe(x).clone()
+
+        for name in ("W_gate", "W_up", "W_down"):
+            bank = getattr(moe, name)
+            w2d = sd_ref[f"{name}.weight"].float().reshape(8 * bank.out_features, bank.in_features)
+            q, params = TensorWiseINT8Layout.quantize(w2d, is_weight=True, per_channel=True, convrot=False)
+            bank.weight = torch.nn.Parameter(
+                QuantizedTensor(q.to(dev), "TensorWiseINT8Layout", params), requires_grad=False
+            )
+            bank._full_precision_mm = True
+
+        actual = moe(x)
+        assert actual.shape == expected.shape
+        assert torch.isfinite(actual).all()
+        cos = float(torch.nn.functional.cosine_similarity(actual.detach().float().reshape(1, -1), expected.detach().float().reshape(1, -1)).item())
+        assert cos > 0.99
+
+
+def test_magi2_uncond_zero_ref_image_stays_zero_normalized(tmp_path: Path):
+    raw_dir = tmp_path / "raw_prev_ref"
+    raw_dir.mkdir()
+    save_file(_make_raw_sandai_preview_sd(), str(raw_dir / "model.safetensors"))
+    bf16_file = tmp_path / "prev_ref_bf16.safetensors"
+    convert_and_quantize(raw_dir, bf16_file, model_kind="preview", fmt="bf16", device_str="cpu")
+    patcher = dinkster_inference.sd.load_diffusion_model(str(bf16_file))
+    model = patcher.model
+
+    pos_lat = torch.ones(1, 48, 1, 4, 4) * 1.5
+    zero_lat = torch.zeros_like(pos_lat)
+    tok = torch.ones(64)
+
+    ec_pos = model.extra_conds(magi2_ref_images=[{"latent": pos_lat, "special_token": tok}])
+    ec_zero = model.extra_conds(magi2_ref_images=[{"latent": zero_lat, "special_token": tok}])
+    pos_out = ec_pos["magi2_payload"].cond["ref_images"][0][0]["latent"]
+    zero_out = ec_zero["magi2_payload"].cond["ref_images"][0][0]["latent"]
+    assert torch.allclose(pos_out, model.latent_format.process_video_in(pos_lat), atol=1e-6)
+    assert float(zero_out.abs().max().item()) == 0.0

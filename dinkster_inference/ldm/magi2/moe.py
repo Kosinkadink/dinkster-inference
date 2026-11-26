@@ -440,13 +440,18 @@ def _ctx_uses_shared_cast_buffer(ctx) -> bool:
 
 def _dequantize_expert_slice(
     bank,
-    weight: QuantizedTensor,
+    weight,
     first: int,
     last: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
     count = last - first
     out_f, in_f = bank.out_features, bank.in_features
+    if not isinstance(weight, QuantizedTensor):
+        w_f = weight.to(dtype)
+        if w_f.ndim == 2:
+            w_f = w_f.view(bank.num_experts, out_f, in_f)
+        return w_f[first:last]
     if weight._qdata.ndim == 2:
         return bank._bank_rows(weight, first, last).dequantize().to(dtype).view(count, out_f, in_f)
 
@@ -457,10 +462,14 @@ def _dequantize_expert_slice(
         and out_f % 128 == 0
         and in_f % 64 == 0
     ):
-        q_slice = weight._qdata[first:last].reshape(count * out_f, in_f // 2)
-        bs_slice = params.block_scale[first:last].reshape(count * out_f, in_f // 16)
+        pad_out = ((out_f + 15) // 16) * 16
+        pad_in = ((in_f + 15) // 16) * 16
+        q_slice = weight._qdata[first:last].reshape(count * pad_out, pad_in // 2)
+        bs_slice = params.block_scale[first:last].reshape(count * pad_out, pad_in // 16)
         one = torch.ones((), device=q_slice.device, dtype=torch.float32)
-        deq = comfy_kitchen.dequantize_nvfp4(q_slice, one, bs_slice, dtype).view(count, out_f, in_f)
+        deq = comfy_kitchen.dequantize_nvfp4(q_slice, one, bs_slice, dtype).view(count, pad_out, pad_in)[
+            :, :out_f, :in_f
+        ]
         s2 = params.scale[first:last] if params.scale.ndim > 0 else params.scale
         return (deq * s2.view(-1, 1, 1).to(dtype)).to(dtype)
 
@@ -605,7 +614,10 @@ class CoreMultiHeadMoE(nn.Module):
         out_dtype: torch.dtype,
     ) -> torch.Tensor:
         if not isinstance(w, QuantizedTensor):
-            w_t = w.to(sorted_inp.dtype).transpose(1, 2)
+            w_3d = w.to(sorted_inp.dtype)
+            if w_3d.ndim == 2:
+                w_3d = w_3d.view(self.flatten_num_experts, bank.out_features, bank.in_features)
+            w_t = w_3d.transpose(1, 2)
             return _launch_triton_single_proj(
                 sorted_inp, w_t, expert_offsets, cu_tiles, grid_t, out_dtype
             )
@@ -743,22 +755,33 @@ class CoreMultiHeadMoE(nn.Module):
         wu_w,
         wd_w,
     ) -> torch.Tensor:
-        if not isinstance(wg_w, QuantizedTensor):
+        if (
+            not isinstance(wg_w, QuantizedTensor)
+            and not isinstance(wu_w, QuantizedTensor)
+            and not isinstance(wd_w, QuantizedTensor)
+        ):
             gather_ids, probs_sorted, expert_offsets = _global_sort_assignments(
                 topk_probs, topk_indices, self.num_experts
             )
+            n_exp = self.flatten_num_experts
+            wg_3d = wg_w.to(x.dtype).view(n_exp, self.d_expert, self.d_head)
+            wu_3d = wu_w.to(x.dtype).view(n_exp, self.d_expert, self.d_head)
+            wd_3d = wd_w.to(x.dtype).view(n_exp, self.d_head, self.d_expert)
             return _launch_triton_mh_moe(
                 x_heads,
                 gather_ids,
                 probs_sorted,
                 expert_offsets,
-                wg_w.to(x.dtype).transpose(1, 2),
-                wu_w.to(x.dtype).transpose(1, 2),
-                wd_w.to(x.dtype).transpose(1, 2),
+                wg_3d.transpose(1, 2),
+                wu_3d.transpose(1, 2),
+                wd_3d.transpose(1, 2),
             )
 
         if (
-            wg_w._qdata.dtype == torch.float8_e4m3fn
+            isinstance(wg_w, QuantizedTensor)
+            and isinstance(wu_w, QuantizedTensor)
+            and isinstance(wd_w, QuantizedTensor)
+            and wg_w._qdata.dtype == torch.float8_e4m3fn
             and wg_w._qdata.ndim == 3
             and wu_w._qdata.ndim == 3
             and wd_w._qdata.ndim == 3

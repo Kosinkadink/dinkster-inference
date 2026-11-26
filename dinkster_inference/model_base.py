@@ -3275,8 +3275,12 @@ class Magi2Preview(BaseModel):
         if ref_images is not None:
             norm_refs = []
             for entry in ref_images:
-                lat = self.latent_format.process_video_in(entry["latent"].float())
-                norm_refs.append({**entry, "latent": lat})
+                raw_lat = entry["latent"].float()
+                if entry.get("normalized", False) or not torch.any(raw_lat):
+                    lat = raw_lat
+                else:
+                    lat = self.latent_format.process_video_in(raw_lat)
+                norm_refs.append({**entry, "latent": lat, "normalized": True})
             payload["ref_images"] = [norm_refs]
         else:
             payload["ref_images"] = [[]]

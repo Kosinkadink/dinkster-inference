@@ -382,10 +382,16 @@ class RefinerAttention(nn.Module):
                 q_pad[:, :, slots, :] = q_bhld
                 k_pad[:, :, slots, :] = k_bhld
                 v_pad[:, :, slots, :] = v_bhld
-                out_pad = _FLEX_COMPILED(
-                    q_pad, k_pad, v_pad, block_mask=fp["block_mask"], enable_gqa=enable_gqa
-                )
-                out_b = out_pad[:, :, slots, :].transpose(1, 2).contiguous()
+                try:
+                    out_pad = _FLEX_COMPILED(
+                        q_pad, k_pad, v_pad, block_mask=fp["block_mask"], enable_gqa=enable_gqa
+                    )
+                    out_b = out_pad[:, :, slots, :].transpose(1, 2).contiguous()
+                except Exception:
+                    out_b = _window_attention_eager(
+                        q_bhld, k_bhld, v_bhld,
+                        plan["block_ranges"], plan["grid_shape"], plan["radius"], plan["video_tokens"]
+                    )
             else:
                 out_b = _window_attention_eager(
                     q_bhld, k_bhld, v_bhld,
