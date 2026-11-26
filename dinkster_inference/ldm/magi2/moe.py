@@ -187,6 +187,7 @@ if _TRITON_AVAILABLE:
     def _mh_moe_proj_kernel(
         inp_ptr,
         w_ptr,
+        w_scale_ptr,
         out_ptr,
         expert_offsets_ptr,
         cu_tiles_ptr,
@@ -204,6 +205,7 @@ if _TRITON_AVAILABLE:
         BLOCK_T: tl.constexpr,
         BLOCK_K: tl.constexpr,
         BLOCK_N: tl.constexpr,
+        HAS_EXPERT_SCALES: tl.constexpr,
     ):
         tile_id = tl.program_id(0)
         n_block_id = tl.program_id(1)
@@ -239,6 +241,10 @@ if _TRITON_AVAILABLE:
                 other=0.0,
             ).to(mm_dtype)
             acc += tl.dot(a, b)
+
+        if HAS_EXPERT_SCALES:
+            w_scale = tl.load(w_scale_ptr + expert_id).to(tl.float32)
+            acc = acc * w_scale
 
         tl.store(
             out_ptr + t_offs[:, None] * stride_out_t + n_offs[None, :] * stride_out_n,
@@ -378,6 +384,7 @@ def _launch_triton_single_proj(
     cu_tiles: torch.Tensor,
     grid_t: int,
     out_dtype: torch.dtype,
+    w_scale: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     total_assign, k_dim = sorted_inp.shape
     num_flat_experts, _, n_dim = w_t.shape
@@ -385,9 +392,11 @@ def _launch_triton_single_proj(
     block_t, block_k, block_n = 128, 64, 64
     out = torch.empty((total_assign, n_dim), device=sorted_inp.device, dtype=out_dtype)
     grid = (grid_t, (n_dim + block_n - 1) // block_n)
+    has_scales = w_scale is not None
     _mh_moe_proj_kernel[grid](
         inp_ptr=sorted_inp,
         w_ptr=w_t,
+        w_scale_ptr=w_scale if has_scales else cu_tiles,
         out_ptr=out,
         expert_offsets_ptr=expert_offsets,
         cu_tiles_ptr=cu_tiles,
@@ -405,10 +414,28 @@ def _launch_triton_single_proj(
         BLOCK_T=block_t,
         BLOCK_K=block_k,
         BLOCK_N=block_n,
+        HAS_EXPERT_SCALES=has_scales,
         num_stages=2,
         num_warps=4,
     )
     return out
+
+
+def _ctx_uses_shared_cast_buffer(ctx) -> bool:
+    """Return True if a CastBiasWeightContext staged its weight in a shared per-stream cast buffer.
+
+    Shared cast buffers cycle across NUM_STREAMS (default 2) offload streams, so holding more
+    than one bank in a shared cast buffer at a time risks overwriting an earlier bank in place.
+    Aimdo VBAR-resident weights return (offload_stream, torch.device, None) with dedicated VBAR
+    storage and do not touch shared cast buffers.
+    """
+    state = getattr(ctx, "state", None)
+    if state is None or len(state) < 3 or state[2] is None:
+        return False
+    offload_stream, weight_or_device, _ = state[2]
+    if offload_stream is None:
+        return False
+    return not isinstance(weight_or_device, torch.device)
 
 
 def _dequantize_expert_slice(
@@ -509,46 +536,121 @@ class CoreMultiHeadMoE(nn.Module):
         x_heads: torch.Tensor,
         topk_probs: torch.Tensor,
         topk_indices: torch.Tensor,
-        wg_bank,
-        wu_bank,
-        wd_bank,
+        wg_bank=None,
+        wu_bank=None,
+        wd_bank=None,
     ) -> torch.Tensor:
         gather_ids, probs_sorted, expert_offsets = _global_sort_assignments(
             topk_probs, topk_indices, self.num_experts
         )
+        if gather_ids.shape[0] == 0:
+            return torch.zeros_like(x_heads)
         counts = expert_offsets.diff().cpu().tolist()
-        out = torch.zeros_like(x_heads, dtype=torch.float32)
-
+        active = []
         start = 0
         for expert_idx, n in enumerate(counts):
-            if n == 0:
-                continue
-            head_idx = expert_idx // self.num_experts
-            tok_idx = gather_ids[start : start + n].long()
-            x_tok = x_heads.index_select(0, tok_idx)[:, head_idx, :]
-            g_proj = wg_bank.expert_linear(x_tok, expert_idx).float()
-            u_proj = wu_bank.expert_linear(x_tok, expert_idx).float()
-            # Interleave gate and up to reuse exact swiglu7 math
-            interleaved = torch.stack((g_proj, u_proj), dim=-1).flatten(-2)
-            hidden = swiglu7(interleaved, out_dtype=x_tok.dtype)
-            d_proj = wd_bank.expert_linear(hidden, expert_idx).float()
-            weighted = d_proj * probs_sorted[start : start + n].unsqueeze(-1)
-            out[:, head_idx, :].index_add_(0, tok_idx, weighted)
-            start += n
+            if n > 0:
+                active.append((expert_idx, start, n, gather_ids[start : start + n].long()))
+                start += n
+
+        def _proj_all_gate(bank):
+            return [
+                bank.expert_linear(x_heads.index_select(0, tok_idx)[:, expert_idx // self.num_experts, :], expert_idx).float()
+                for expert_idx, _, _, tok_idx in active
+            ]
+
+        if wg_bank is not None:
+            g_list = _proj_all_gate(wg_bank)
+        else:
+            with self.W_gate.bank_resident(x_heads) as wg_b:
+                g_list = _proj_all_gate(wg_b)
+
+        if wu_bank is not None:
+            u_list = _proj_all_gate(wu_bank)
+        else:
+            with self.W_up.bank_resident(x_heads) as wu_b:
+                u_list = _proj_all_gate(wu_b)
+
+        h_list = [
+            swiglu7(torch.stack((g_proj, u_proj), dim=-1).flatten(-2), out_dtype=x_heads.dtype)
+            for g_proj, u_proj in zip(g_list, u_list)
+        ]
+        del g_list, u_list
+
+        out = torch.zeros_like(x_heads, dtype=torch.float32)
+
+        def _proj_all_down(bank):
+            for (expert_idx, s_off, n, tok_idx), hidden in zip(active, h_list):
+                head_idx = expert_idx // self.num_experts
+                d_proj = bank.expert_linear(hidden, expert_idx).float()
+                weighted = d_proj * probs_sorted[s_off : s_off + n].unsqueeze(-1)
+                out[:, head_idx, :].index_add_(0, tok_idx, weighted)
+
+        if wd_bank is not None:
+            _proj_all_down(wd_bank)
+        else:
+            with self.W_down.bank_resident(x_heads) as wd_b:
+                _proj_all_down(wd_b)
         return out.to(x_heads.dtype)
 
-    def _forward_sequential_banks_triton(
+    def _project_bank_triton(
+        self,
+        bank,
+        w,
+        sorted_inp: torch.Tensor,
+        counts: torch.Tensor,
+        expert_offsets: torch.Tensor,
+        cu_tiles: torch.Tensor,
+        grid_t: int,
+        out_dtype: torch.dtype,
+    ) -> torch.Tensor:
+        if not isinstance(w, QuantizedTensor):
+            w_t = w.to(sorted_inp.dtype).transpose(1, 2)
+            return _launch_triton_single_proj(
+                sorted_inp, w_t, expert_offsets, cu_tiles, grid_t, out_dtype
+            )
+        if w._qdata.dtype == torch.float8_e4m3fn and w._qdata.ndim == 3:
+            s_w = w._params.scale.expand(self.flatten_num_experts).contiguous()
+            w_t = w._qdata.transpose(1, 2)
+            return _launch_triton_single_proj(
+                sorted_inp, w_t, expert_offsets, cu_tiles, grid_t, out_dtype, w_scale=s_w
+            )
+        block_t = 128
+        n_dim = bank.out_features
+        out = torch.empty((sorted_inp.shape[0], n_dim), device=sorted_inp.device, dtype=out_dtype)
+        for h in range(self.num_heads):
+            first = h * self.num_experts
+            last = first + self.num_experts
+            h_start = int(expert_offsets[first].item())
+            h_end = int(expert_offsets[last].item())
+            if h_end == h_start:
+                continue
+            h_offsets = expert_offsets[first : last + 1] - h_start
+            h_counts = counts[first:last]
+            h_tiles = (h_counts + block_t - 1) // block_t
+            h_cu_tiles = F.pad(torch.cumsum(h_tiles, dim=0, dtype=torch.int32), (1, 0))
+            h_grid_t = (h_end - h_start + block_t - 1) // block_t + self.num_experts
+            w_h = _dequantize_expert_slice(bank, w, first, last, sorted_inp.dtype).transpose(1, 2)
+            out[h_start:h_end] = _launch_triton_single_proj(
+                sorted_inp[h_start:h_end], w_h, h_offsets, h_cu_tiles, h_grid_t, out_dtype
+            )
+        return out
+
+    def _forward_sequential_chunk_triton(
         self,
         x_heads: torch.Tensor,
         topk_probs: torch.Tensor,
         topk_indices: torch.Tensor,
+        pre_gate: Optional[tuple] = None,
     ) -> torch.Tensor:
-        """Low-VRAM BF16 MoE path: pins only ONE 1.875 GiB expert bank in VBAR at a time."""
+        """Stream W_gate -> W_up -> W_down one bank at a time (never nests >1 cast buffer)."""
         gather_ids, probs_sorted, expert_offsets = _global_sort_assignments(
             topk_probs, topk_indices, self.num_experts
         )
         total_assign = gather_ids.shape[0]
         if total_assign == 0:
+            if pre_gate is not None:
+                pre_gate[0].__exit__(None, None, None)
             return torch.zeros_like(x_heads)
 
         counts = expert_offsets.diff()
@@ -564,16 +666,23 @@ class CoreMultiHeadMoE(nn.Module):
         cu_tiles = F.pad(torch.cumsum(tile_counts, dim=0, dtype=torch.int32), (1, 0))
         grid_t = (total_assign + block_t - 1) // block_t + self.flatten_num_experts
 
-        with self.W_gate.bank_resident(x_heads) as wg_bank:
-            wg_t = wg_bank._resident_bank[0].to(x_heads.dtype).transpose(1, 2)
-            gate_out = _launch_triton_single_proj(
-                sorted_x, wg_t, expert_offsets, cu_tiles, grid_t, torch.float32
-            )
+        if pre_gate is not None:
+            ctx_g, wg_w = pre_gate
+            try:
+                gate_out = self._project_bank_triton(
+                    self.W_gate, wg_w, sorted_x, counts, expert_offsets, cu_tiles, grid_t, torch.float32
+                )
+            finally:
+                ctx_g.__exit__(None, None, None)
+        else:
+            with self.W_gate.bank_resident(x_heads) as wg_bank:
+                gate_out = self._project_bank_triton(
+                    wg_bank, wg_bank._resident_bank[0], sorted_x, counts, expert_offsets, cu_tiles, grid_t, torch.float32
+                )
 
         with self.W_up.bank_resident(x_heads) as wu_bank:
-            wu_t = wu_bank._resident_bank[0].to(x_heads.dtype).transpose(1, 2)
-            up_out = _launch_triton_single_proj(
-                sorted_x, wu_t, expert_offsets, cu_tiles, grid_t, torch.float32
+            up_out = self._project_bank_triton(
+                wu_bank, wu_bank._resident_bank[0], sorted_x, counts, expert_offsets, cu_tiles, grid_t, torch.float32
             )
 
         del sorted_x
@@ -583,9 +692,8 @@ class CoreMultiHeadMoE(nn.Module):
         del gate_out, up_out, gate_c, up_c
 
         with self.W_down.bank_resident(x_heads) as wd_bank:
-            wd_t = wd_bank._resident_bank[0].to(x_heads.dtype).transpose(1, 2)
-            down_out = _launch_triton_single_proj(
-                hidden, wd_t, expert_offsets, cu_tiles, grid_t, torch.float32
+            down_out = self._project_bank_triton(
+                wd_bank, wd_bank._resident_bank[0], hidden, counts, expert_offsets, cu_tiles, grid_t, torch.float32
             )
 
         del hidden
@@ -595,6 +703,107 @@ class CoreMultiHeadMoE(nn.Module):
         flat_out.scatter_add_(0, scatter_idx, weighted)
         return flat_out.view_as(x_heads).to(x_heads.dtype)
 
+    def _forward_sequential_banks_triton(
+        self,
+        x_heads: torch.Tensor,
+        topk_probs: torch.Tensor,
+        topk_indices: torch.Tensor,
+        pre_gate: Optional[tuple] = None,
+    ) -> torch.Tensor:
+        """Low-VRAM single-bank MoE path with automatic token chunking to bound temporary VRAM."""
+        seq_len = x_heads.shape[0]
+        bytes_per_tok = self.num_heads * self.top_k * self.d_expert * 8
+        free_bytes = dinkster_inference.model_management.get_free_memory(x_heads.device)
+        budget = min(12 << 30, max(1 << 30, int(free_bytes * 0.45)))
+        chunk_tokens = max(1024, budget // max(bytes_per_tok, 1))
+        if seq_len <= chunk_tokens:
+            return self._forward_sequential_chunk_triton(
+                x_heads, topk_probs, topk_indices, pre_gate=pre_gate
+            )
+
+        if pre_gate is not None:
+            pre_gate[0].__exit__(None, None, None)
+        out = torch.empty_like(x_heads)
+        for start in range(0, seq_len, chunk_tokens):
+            end = min(start + chunk_tokens, seq_len)
+            out[start:end] = self._forward_sequential_chunk_triton(
+                x_heads[start:end],
+                topk_probs[:, start:end, :],
+                topk_indices[:, start:end, :],
+            )
+        return out
+
+    def _forward_fused_with_weights(
+        self,
+        x: torch.Tensor,
+        x_heads: torch.Tensor,
+        topk_probs: torch.Tensor,
+        topk_indices: torch.Tensor,
+        wg_w,
+        wu_w,
+        wd_w,
+    ) -> torch.Tensor:
+        if not isinstance(wg_w, QuantizedTensor):
+            gather_ids, probs_sorted, expert_offsets = _global_sort_assignments(
+                topk_probs, topk_indices, self.num_experts
+            )
+            return _launch_triton_mh_moe(
+                x_heads,
+                gather_ids,
+                probs_sorted,
+                expert_offsets,
+                wg_w.to(x.dtype).transpose(1, 2),
+                wu_w.to(x.dtype).transpose(1, 2),
+                wd_w.to(x.dtype).transpose(1, 2),
+            )
+
+        if (
+            wg_w._qdata.dtype == torch.float8_e4m3fn
+            and wg_w._qdata.ndim == 3
+            and wu_w._qdata.ndim == 3
+            and wd_w._qdata.ndim == 3
+        ):
+            gather_ids, probs_sorted, expert_offsets = _global_sort_assignments(
+                topk_probs, topk_indices, self.num_experts
+            )
+            n_exp = self.flatten_num_experts
+            s_wg = wg_w._params.scale.expand(n_exp).contiguous()
+            s_wu = wu_w._params.scale.expand(n_exp).contiguous()
+            s_wd = wd_w._params.scale.expand(n_exp).contiguous()
+            return _launch_triton_mh_moe(
+                x_heads,
+                gather_ids,
+                probs_sorted,
+                expert_offsets,
+                wg_w._qdata.transpose(1, 2),
+                wu_w._qdata.transpose(1, 2),
+                wd_w._qdata.transpose(1, 2),
+                wg_scale=s_wg,
+                wu_scale=s_wu,
+                wd_scale=s_wd,
+            )
+
+        out_heads = torch.empty_like(x_heads)
+        for h in range(self.num_heads):
+            first = h * self.num_experts
+            last = first + self.num_experts
+            gather_h, probs_h, offsets_h = _global_sort_assignments(
+                topk_probs[h : h + 1], topk_indices[h : h + 1], self.num_experts
+            )
+            wg_h = _dequantize_expert_slice(self.W_gate, wg_w, first, last, x.dtype).transpose(1, 2)
+            wu_h = _dequantize_expert_slice(self.W_up, wu_w, first, last, x.dtype).transpose(1, 2)
+            wd_h = _dequantize_expert_slice(self.W_down, wd_w, first, last, x.dtype).transpose(1, 2)
+            out_heads[:, h : h + 1, :] = _launch_triton_mh_moe(
+                x_heads[:, h : h + 1, :],
+                gather_h,
+                probs_h,
+                offsets_h,
+                wg_h,
+                wu_h,
+                wd_h,
+            )
+        return out_heads
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         seq_len = x.shape[0]
         if seq_len == 0:
@@ -602,7 +811,7 @@ class CoreMultiHeadMoE(nn.Module):
         x_heads = x.view(seq_len, self.num_heads, self.d_head).contiguous()
         topk_probs, topk_indices = self._route(x_heads)
 
-        use_triton = (
+        use_triton_seq = (
             _TRITON_AVAILABLE
             and x.is_cuda
             and x.dtype in (torch.bfloat16, torch.float16)
@@ -610,107 +819,46 @@ class CoreMultiHeadMoE(nn.Module):
             and self.d_expert % 64 == 0
         )
 
-        # When unquantized BF16 MoE is dynamically VBAR-paged inside tight VRAM (<14 GiB free),
-        # stream W_gate -> W_up -> W_down one bank at a time (1.88 GiB peak instead of 5.63 GiB).
-        raw_wg = self.W_gate.weight
-        if (
-            use_triton
-            and raw_wg is not None
-            and not isinstance(raw_wg, QuantizedTensor)
-            and getattr(self.W_gate, "_v", None) is not None
-        ):
-            bank_bytes = self.flatten_num_experts * self.d_head * self.d_expert * 2
-            free_bytes = dinkster_inference.model_management.get_free_memory(x.device)
-            if 3 * bank_bytes > int(free_bytes * 0.45):
-                out = self._forward_sequential_banks_triton(x_heads, topk_probs, topk_indices)
-                return out.reshape(seq_len, self.num_heads * self.d_head)
-
-        with (
-            self.W_gate.bank_resident(x) as wg_bank,
-            self.W_up.bank_resident(x) as wu_bank,
-            self.W_down.bank_resident(x) as wd_bank,
-        ):
-            wg_w = wg_bank._resident_bank[0]
-            wu_w = wu_bank._resident_bank[0]
-            wd_w = wd_bank._resident_bank[0]
-
-            use_triton = (
-                _TRITON_AVAILABLE
-                and x.is_cuda
-                and x.dtype in (torch.bfloat16, torch.float16)
-                and self.d_head % 64 == 0
-                and self.d_expert % 32 == 0
-            )
-            if not use_triton:
-                out = self._forward_eager(x_heads, topk_probs, topk_indices, wg_bank, wu_bank, wd_bank)
-                return out.reshape(seq_len, self.num_heads * self.d_head)
-
-            # Case 1: unquantized resident 3D bank [3072, out, in] -> single Triton launch
-            if not isinstance(wg_w, QuantizedTensor):
-                gather_ids, probs_sorted, expert_offsets = _global_sort_assignments(
-                    topk_probs, topk_indices, self.num_experts
-                )
-                out = _launch_triton_mh_moe(
-                    x_heads,
-                    gather_ids,
-                    probs_sorted,
-                    expert_offsets,
-                    wg_w.to(x.dtype).transpose(1, 2),
-                    wu_w.to(x.dtype).transpose(1, 2),
-                    wd_w.to(x.dtype).transpose(1, 2),
+        # Acquire W_gate first. If it spilled into a shared per-stream cast buffer (not VBAR-resident),
+        # never nest W_up / W_down cast contexts alongside it: shared cast buffers cycle over
+        # NUM_STREAMS (default 2) streams, so 3 nested non-resident banks would overwrite W_gate's
+        # buffer with W_down's bytes before the kernel launches.
+        if use_triton_seq:
+            ctx_g = self.W_gate._cast_bank(x)
+            wg_uses_buf = _ctx_uses_shared_cast_buffer(ctx_g)
+            wg_w, _ = ctx_g.__enter__()
+            if wg_uses_buf:
+                out = self._forward_sequential_banks_triton(
+                    x_heads, topk_probs, topk_indices, pre_gate=(ctx_g, wg_w)
                 )
                 return out.reshape(seq_len, self.num_heads * self.d_head)
 
-            # Case 2: FP8 3D bank [3072, out, in] -> single zero-dequant Triton launch
-            if (
-                wg_w._qdata.dtype == torch.float8_e4m3fn
-                and wg_w._qdata.ndim == 3
-                and wu_w._qdata.ndim == 3
-                and wd_w._qdata.ndim == 3
-            ):
-                gather_ids, probs_sorted, expert_offsets = _global_sort_assignments(
-                    topk_probs, topk_indices, self.num_experts
-                )
-                n_exp = self.flatten_num_experts
-                s_wg = wg_w._params.scale.expand(n_exp).contiguous()
-                s_wu = wu_w._params.scale.expand(n_exp).contiguous()
-                s_wd = wd_w._params.scale.expand(n_exp).contiguous()
-                out = _launch_triton_mh_moe(
-                    x_heads,
-                    gather_ids,
-                    probs_sorted,
-                    expert_offsets,
-                    wg_w._qdata.transpose(1, 2),
-                    wu_w._qdata.transpose(1, 2),
-                    wd_w._qdata.transpose(1, 2),
-                    wg_scale=s_wg,
-                    wu_scale=s_wu,
-                    wd_scale=s_wd,
-                )
-                return out.reshape(seq_len, self.num_heads * self.d_head)
+            try:
+                ctx_u = self.W_up._cast_bank(x)
+                wu_uses_buf = _ctx_uses_shared_cast_buffer(ctx_u)
+                wu_w, _ = ctx_u.__enter__()
+                if wu_uses_buf:
+                    ctx_u.__exit__(None, None, None)
+                    ctx_g.__exit__(None, None, None)
+                    ctx_g = None
+                    out = self._forward_sequential_banks_triton(x_heads, topk_probs, topk_indices)
+                    return out.reshape(seq_len, self.num_heads * self.d_head)
 
-            # Case 3: NVFP4 / INT8 / other QuantizedTensor -> 12 independent per-head batches
-            # (<480 MiB transient dequant per head, reusing L2 cache)
-            out_heads = torch.empty_like(x_heads)
-            for h in range(self.num_heads):
-                first = h * self.num_experts
-                last = first + self.num_experts
-                gather_h, probs_h, offsets_h = _global_sort_assignments(
-                    topk_probs[h : h + 1], topk_indices[h : h + 1], self.num_experts
-                )
-                wg_h = _dequantize_expert_slice(wg_bank, wg_w, first, last, x.dtype).transpose(1, 2)
-                wu_h = _dequantize_expert_slice(wu_bank, wu_w, first, last, x.dtype).transpose(1, 2)
-                wd_h = _dequantize_expert_slice(wd_bank, wd_w, first, last, x.dtype).transpose(1, 2)
-                out_heads[:, h : h + 1, :] = _launch_triton_mh_moe(
-                    x_heads[:, h : h + 1, :],
-                    gather_h,
-                    probs_h,
-                    offsets_h,
-                    wg_h,
-                    wu_h,
-                    wd_h,
-                )
-            return out_heads.reshape(seq_len, self.num_heads * self.d_head)
+                try:
+                    with self.W_down.bank_resident(x) as wd_bank:
+                        wd_w = wd_bank._resident_bank[0]
+                        out = self._forward_fused_with_weights(
+                            x, x_heads, topk_probs, topk_indices, wg_w, wu_w, wd_w
+                        )
+                        return out.reshape(seq_len, self.num_heads * self.d_head)
+                finally:
+                    ctx_u.__exit__(None, None, None)
+            finally:
+                if ctx_g is not None:
+                    ctx_g.__exit__(None, None, None)
+
+        out = self._forward_eager(x_heads, topk_probs, topk_indices)
+        return out.reshape(seq_len, self.num_heads * self.d_head)
 
 
 class MultiHeadMoELayer(nn.Module):

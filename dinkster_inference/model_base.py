@@ -3237,7 +3237,7 @@ class Magi2Preview(BaseModel):
             return dinkster_inference.nested_tensor.NestedTensor(
                 [fn(streams[0])] + list(streams[1:])
             )
-        if self.latent_shapes is not None and len(self.latent_shapes) > 1 and latent.ndim == 2:
+        if self.latent_shapes is not None and len(self.latent_shapes) > 1 and latent.ndim in (2, 3):
             unpacked = utils.unpack_latents(latent, self.latent_shapes)
             packed, _ = utils.pack_latents([fn(unpacked[0])] + list(unpacked[1:]))
             return packed
@@ -3304,3 +3304,12 @@ class Magi2Refiner(Magi2Preview):
             unet_model=dinkster_inference.ldm.magi2.refiner.Magi2RefinerModel,
         )
         self.model_sampling = dinkster_inference.ldm.magi2.sampling.Magi2RefinerModelSampling(model_config)
+
+    def memory_required(self, input_shape, cond_shapes={}):
+        base = super().memory_required(input_shape, cond_shapes=cond_shapes)
+        if len(input_shape) == 5:
+            tokens = int(input_shape[0]) * int(input_shape[2]) * int(input_shape[3]) * int(input_shape[4])
+            hidden = getattr(self.diffusion_model, "hidden_size", 4096)
+            est = tokens * hidden * 24
+            return max(base, est)
+        return base

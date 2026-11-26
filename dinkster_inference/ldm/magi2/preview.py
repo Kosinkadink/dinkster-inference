@@ -710,7 +710,9 @@ class Magi2PreviewModel(nn.Module):
         else:
             aud_coords = torch.empty((0, 9), device=device, dtype=torch.float32)
 
-        t_flat = timestep.reshape(-1).float() / 1000.0
+        # FlowUniPCMultistepScheduler.set_timesteps integer-truncates (sigmas * 1000).to(int64)
+        # before normalizing back by 1000, keeping sinusoidal_embedding_1d on exact integer positions.
+        t_flat = torch.floor(timestep.reshape(-1).float()) / 1000.0
         if t_flat.numel() == 1 and batch_size > 1:
             t_flat = t_flat.expand(batch_size)
 

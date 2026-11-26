@@ -199,22 +199,35 @@ class MultiModalityRMSNorm(nn.Module):
         modality_dispatcher: Optional[ModalityDispatcher] = None,
     ) -> torch.Tensor:
         target_dtype = x.dtype if self.out_dtype is None else self.out_dtype
-        t = x.float()
-        t = t * torch.rsqrt(t.pow(2).mean(dim=-1, keepdim=True) + self.eps)
         w = dinkster_inference.model_management.cast_to(
             self.weight, dtype=torch.float32, device=x.device
         )
+
+        def _norm_apply(part: torch.Tensor, w_part: torch.Tensor) -> torch.Tensor:
+            if part.shape[0] == 0:
+                return part.to(target_dtype)
+            scale = w_part + 1.0
+            chunk = 65536
+            if part.shape[0] <= chunk:
+                t = part.float()
+                t = t * torch.rsqrt(t.pow(2).mean(dim=-1, keepdim=True) + self.eps)
+                return (t * scale).to(target_dtype)
+            out = torch.empty(part.shape, device=part.device, dtype=target_dtype)
+            for s in range(0, part.shape[0], chunk):
+                e = min(part.shape[0], s + chunk)
+                t = part[s:e].float()
+                t = t * torch.rsqrt(t.pow(2).mean(dim=-1, keepdim=True) + self.eps)
+                out[s:e] = (t * scale).to(target_dtype)
+            return out
+
         if self.num_modality == 1:
-            return (t * (w + 1.0)).to(target_dtype)
+            return _norm_apply(x, w)
         if modality_dispatcher is None:
             raise ValueError("modality_dispatcher is required when num_modality > 1")
         w_chunks = w.chunk(self.num_modality, dim=0)
-        parts = modality_dispatcher.dispatch(t)
-        out_parts = [
-            part * (w_chunks[i] + 1.0) if part.shape[0] > 0 else part
-            for i, part in enumerate(parts)
-        ]
-        return modality_dispatcher.undispatch(out_parts).to(target_dtype)
+        parts = modality_dispatcher.dispatch(x)
+        out_parts = [_norm_apply(part, w_chunks[i]) for i, part in enumerate(parts)]
+        return modality_dispatcher.undispatch(out_parts)
 
 
 class MultiModalityLinear(nn.Module):

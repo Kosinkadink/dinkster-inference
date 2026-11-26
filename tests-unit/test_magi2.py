@@ -429,3 +429,103 @@ def test_magi2_letterbox_reference_image_matches_upstream_resizepad_order():
     assert torch.allclose(square_out[:, 0, :, :], torch.ones_like(square_out[:, 0, :, :]))
     assert square_out[:, 160, 160, :].max().item() < 0.25
 
+
+def test_magi2_core_moe_two_slot_cast_buffer_no_overwrite():
+    """Verify 3-bank CoreMultiHeadMoE never overwrites W_gate with W_down when NUM_STREAMS=2."""
+    torch.manual_seed(1234)
+    devices_and_dims = [(torch.device("cpu"), torch.float32, 16, 8)]
+    if torch.cuda.is_available():
+        devices_and_dims.append((torch.device("cuda"), torch.bfloat16, 128, 64))
+
+    for dev, dt, hidden_size, d_exp in devices_and_dims:
+        ops = dinkster_inference.ops.mixed_precision_ops({}, dt)
+        moe = dinkster_inference.ldm.magi2.moe.CoreMultiHeadMoE(
+            hidden_size=hidden_size,
+            num_heads=2,
+            num_experts=4,
+            top_k=2,
+            expert_intermediate_size=d_exp,
+            dtype=dt,
+            device=dev,
+            moe_ops=ops,
+        )
+        d_head = hidden_size // 2
+        sd = {
+            "gate": torch.randn(8, d_head, device=dev, dtype=torch.float32) * 0.2,
+            "router.expert_bias": torch.zeros(8, device=dev, dtype=torch.float32),
+            "W_gate.weight": torch.randn(8, d_exp, d_head, device=dev, dtype=dt) * 0.2,
+            "W_up.weight": torch.randn(8, d_exp, d_head, device=dev, dtype=dt) * 0.2,
+            "W_down.weight": torch.randn(8, d_head, d_exp, device=dev, dtype=dt) * 0.2,
+        }
+        moe.load_state_dict(sd)
+
+        x = torch.randn(19, hidden_size, device=dev, dtype=dt)
+        expected = moe(x).clone()
+
+        max_numel = 8 * d_exp * d_head
+        ring_buffers = [
+            torch.empty(max_numel, device=dev, dtype=dt),
+            torch.empty(max_numel, device=dev, dtype=dt),
+        ]
+        counter = [0]
+
+        def make_ring_cast_bank(bank_mod):
+            def _fake_cast_bank(_inp):
+                slot = counter[0] % 2
+                counter[0] += 1
+                src = bank_mod.weight
+                buf = ring_buffers[slot][: src.numel()].view_as(src)
+                buf.copy_(src)
+
+                class _RingCtx:
+                    state = (buf, None, ("fake_stream", buf, None))
+
+                    def __enter__(self):
+                        return buf, None
+
+                    def __exit__(self, *args):
+                        return None
+
+                return _RingCtx()
+
+            return _fake_cast_bank
+
+        moe.W_gate._cast_bank = make_ring_cast_bank(moe.W_gate)
+        moe.W_up._cast_bank = make_ring_cast_bank(moe.W_up)
+        moe.W_down._cast_bank = make_ring_cast_bank(moe.W_down)
+
+        actual = moe(x)
+        tol = 2e-2 if dt == torch.bfloat16 else 1e-5
+        assert torch.allclose(actual, expected, atol=tol, rtol=tol)
+
+
+def test_magi2_preview_packed_av_latent_roundtrip(tmp_path: Path):
+    """Verify packed 3D (B, 1, V+A) latents from utils.pack_latents normalize/unnormalize video only."""
+    raw_dir = tmp_path / "raw_prev"
+    raw_dir.mkdir()
+    save_file(_make_raw_sandai_preview_sd(), str(raw_dir / "model.safetensors"))
+    bf16_file = tmp_path / "prev_bf16.safetensors"
+    convert_and_quantize(raw_dir, bf16_file, model_kind="preview", fmt="bf16", device_str="cpu")
+    patcher = dinkster_inference.sd.load_diffusion_model(str(bf16_file))
+    model = patcher.model
+
+    torch.manual_seed(99)
+    v_raw = torch.randn(1, 48, 2, 4, 4)
+    a_raw = torch.randn(1, 64, 6)
+    packed, shapes = dinkster_inference.utils.pack_latents([v_raw, a_raw])
+    assert packed.ndim == 3
+    model.latent_shapes = shapes
+
+    normed = model.process_latent_in(packed)
+    v_norm_u, a_norm_u = dinkster_inference.utils.unpack_latents(normed, shapes)
+    assert not torch.allclose(v_norm_u, v_raw)
+    assert torch.allclose(v_norm_u, model.latent_format.process_video_in(v_raw), atol=1e-5)
+    assert torch.equal(a_norm_u, a_raw)
+
+    unnormed = model.process_latent_out(normed)
+    v_out_u, a_out_u = dinkster_inference.utils.unpack_latents(unnormed, shapes)
+    assert torch.allclose(v_out_u, v_raw, atol=1e-5)
+    assert torch.equal(a_out_u, a_raw)
+
+
+
